@@ -106,8 +106,9 @@ function App() {
   };
 
   const handleCellClick = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard!");
+    const trimmedText = text.trim().replace(/\$/g, "").replace(/,/g, "");
+    navigator.clipboard.writeText(trimmedText);
+    toast.success("Copied: " + trimmedText);
   };
 
   const handleSort = (columnIndex: number) => {
@@ -146,14 +147,20 @@ function App() {
         onDragLeave={handleDragLeave}
         className={"drop " + (isDragging ? "dragging" : "")}
       >
-        {!data.length && <h1>CSV Finder</h1>}
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Filter"
-          value={filter}
-          onChange={handleFilterChange}
-        />
+        {!data.length && (
+          <div className="header">
+            <h1>CSV Finder</h1>
+          </div>
+        )}
+        {data.length > 0 && (
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Filter"
+            value={filter}
+            onChange={handleFilterChange}
+          />
+        )}
         {data.length > 0 ? (
           <div>
             <p className="row-info">
@@ -207,7 +214,7 @@ function App() {
           <a href="https://github.com/andygock/csv-finder">GitHub</a>
         </footer>
       </div>
-      <ToastContainer />
+      <ToastContainer autoClose={1000} pauseOnFocusLoss={false} />
     </div>
   );
 }
