@@ -9,6 +9,10 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [filter, setFilter] = useState("");
   const [dragText, setDragText] = useState("Drag and drop a CSV file here");
+  const [sortConfig, setSortConfig] = useState<{
+    key: number;
+    direction: string;
+  } | null>(null);
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -85,53 +89,102 @@ function App() {
     toast.success("Copied to clipboard!");
   };
 
-  // console.log("data", data);
+  const handleSort = (columnIndex: number) => {
+    let direction = "ascending";
+    if (
+      sortConfig &&
+      sortConfig.key === columnIndex &&
+      sortConfig.direction === "ascending"
+    ) {
+      direction = "descending";
+    }
+    setSortConfig({ key: columnIndex, direction });
+  };
+
+  const sortedData = (data: string[][]) => {
+    if (!sortConfig) return data;
+    const sorted = [...data].sort((a, b) => {
+      if (a[sortConfig.key] < b[sortConfig.key])
+        return sortConfig.direction === "ascending" ? -1 : 1;
+      if (a[sortConfig.key] > b[sortConfig.key])
+        return sortConfig.direction === "ascending" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  };
+
+  const filteredData = filterData(data, filter);
+  const displayedData = sortedData(filteredData);
 
   return (
-    <div
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      className={"drop " + (isDragging ? "dragging" : "")}
-    >
-      <h1>Find Stuff In CSVs</h1>
-      <input
-        type="text"
-        placeholder="Filter"
-        value={filter}
-        onChange={handleFilterChange}
-      />
-      {data.length > 0 ? (
-        <div>
-          <table>
-            <thead>
-              <tr>
-                {data[0].map((header, index) => (
-                  <th key={index}>{header}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filterData(data, filter).map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
-                    <td
-                      key={cellIndex}
-                      onClick={() => handleCellClick(cell)}
-                      className="cell"
-                    >
-                      {filter ? highlightText(cell, filter) : cell}
-                    </td>
+    <div>
+      <div
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        className={"drop " + (isDragging ? "dragging" : "")}
+      >
+        {!data.length && <h1>CSV Finder</h1>}
+        <input
+          type="text"
+          placeholder="Filter"
+          value={filter}
+          onChange={handleFilterChange}
+        />
+        {data.length > 0 ? (
+          <div>
+            <p className="row-info">
+              Loaded rows: {data.length - 1}, Displayed rows:{" "}
+              {displayedData.length}
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  {data[0].map((header, index) => (
+                    <th key={index} onClick={() => handleSort(index)}>
+                      {header}
+                      {sortConfig && sortConfig.key === index && (
+                        <span>
+                          {sortConfig.direction === "ascending" ? " 🔼" : " 🔽"}
+                        </span>
+                      )}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="drag-text">{dragText}</p>
-      )}
+              </thead>
+              <tbody>
+                {displayedData.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {row.map((cell, cellIndex) => (
+                      <td
+                        key={cellIndex}
+                        onClick={() => handleCellClick(cell)}
+                        className="cell"
+                      >
+                        {filter ? highlightText(cell, filter) : cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div>
+            <p className="drag-text">{dragText}</p>
+            <p>
+              Loaded files and processing of data is performed in your web
+              browser only. It is never sent to any other third party servers.
+            </p>
+          </div>
+        )}
+        <footer className="footer">
+          &copy; {new Date().getFullYear()}{" "}
+          <a href="https://gock.net/">Andy Gock</a> |{" "}
+          <a href="https://github.com/andygock/csv-finder">GitHub</a>
+        </footer>
+      </div>
       <ToastContainer />
     </div>
   );
