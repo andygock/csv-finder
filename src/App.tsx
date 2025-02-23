@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Papa from "papaparse";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -13,6 +13,27 @@ function App() {
     key: number;
     direction: string;
   } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFilter("");
+      } else if (
+        /^[a-zA-Z0-9]$/.test(event.key) &&
+        document.activeElement !== inputRef.current
+      ) {
+        event.preventDefault();
+        setFilter((prevFilter) => prevFilter + event.key);
+        inputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -127,6 +148,7 @@ function App() {
       >
         {!data.length && <h1>CSV Finder</h1>}
         <input
+          ref={inputRef}
           type="text"
           placeholder="Filter"
           value={filter}
