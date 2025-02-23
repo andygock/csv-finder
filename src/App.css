@@ -9,14 +9,19 @@ body {
 }
 
 .drop {
-  background-color: #f0f0f0;
+  background-color: #fcfcfc;
   border: dashed 2px #ccc;
   padding: 20px;
   text-align: center;
+  min-height: 200px; /* Ensure no layout shift */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 
 .dragging {
-  background-color: green;
+  background-color: lightgreen;
 }
 
 .highlight {
@@ -46,12 +51,12 @@ body {
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 20px;
+  margin-top: 10px;
 }
 
 th,
 td {
-  padding: 8px;
+  padding: 4px;
   text-align: left;
   border-bottom: 1px solid #ddd;
 }
@@ -71,4 +76,9 @@ input[type="text"] {
   border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 16px;
+}
+
+.drag-text {
+  font-size: 18px;
+  color: #666;
 }

@@ -8,6 +8,7 @@ function App() {
   const [data, setData] = useState<string[][]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [filter, setFilter] = useState("");
+  const [dragText, setDragText] = useState("Drag and drop a CSV file here");
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -18,18 +19,23 @@ function App() {
       Papa.parse(file, {
         complete: (result) => {
           setData(result.data as string[][]);
+          setDragText("CSV file loaded successfully!");
         },
       });
+    } else {
+      setDragText("Please drop a valid CSV file.");
     }
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragging(true); // Ensure isDragging remains true
+    setDragText("Release to upload the CSV file");
   };
 
   const handleDragEnter = () => {
     setIsDragging(true);
+    setDragText("Release to upload the CSV file");
   };
 
   const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
@@ -37,6 +43,7 @@ function App() {
       return;
     }
     setIsDragging(false);
+    setDragText("Drag and drop a CSV file here");
   };
 
   const handleFilterChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,7 +102,7 @@ function App() {
         value={filter}
         onChange={handleFilterChange}
       />
-      {data.length > 0 && (
+      {data.length > 0 ? (
         <div>
           <table>
             <thead>
@@ -122,6 +129,8 @@ function App() {
             </tbody>
           </table>
         </div>
+      ) : (
+        <p className="drag-text">{dragText}</p>
       )}
       <ToastContainer />
     </div>
