@@ -20,6 +20,8 @@ function App() {
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [settings, setSettings] = useSettings();
+  const [isHeader, setIsHeader] = useState(true);
+  const [exactMatch, setExactMatch] = useState(false);
 
   // key down
   useEffect(() => {
@@ -123,6 +125,14 @@ function App() {
     setFilter(event.target.value);
   };
 
+  const handleHeaderCheckboxChange = () => {
+    setIsHeader(!isHeader);
+  };
+
+  const handleExactMatchCheckboxChange = () => {
+    setExactMatch(!exactMatch);
+  };
+
   const highlightText = (text: string, highlight: string) => {
     const tokens = highlight.toLowerCase().split(" ");
     const parts = text.split(new RegExp(`(${tokens.join("|")})`, "gi"));
@@ -142,15 +152,15 @@ function App() {
   };
 
   const filterData = (data: string[][], filter: string) => {
-    if (!filter) return data.slice(1);
-    const tokens = filter.toLowerCase().split(" ");
-    return data
-      .slice(1)
-      .filter((row) =>
-        tokens.every((token) =>
-          row.some((cell) => cell.toLowerCase().includes(token))
-        )
-      );
+    if (!filter) return isHeader ? data.slice(1) : data;
+    const tokens = exactMatch
+      ? [filter.trim().toLowerCase()]
+      : filter.toLowerCase().split(" ");
+    return (isHeader ? data.slice(1) : data).filter((row) =>
+      tokens.every((token) =>
+        row.some((cell) => cell.toLowerCase().includes(token))
+      )
+    );
   };
 
   const handleCellClick = (text: string) => {
@@ -183,7 +193,7 @@ function App() {
   };
 
   const sortedData = (data: string[][]) => {
-    if (!sortConfig) return data;
+    if (!sortConfig || !isHeader) return data;
     const sorted = [...data].sort((a, b) => {
       if (a[sortConfig.key] < b[sortConfig.key])
         return sortConfig.direction === "ascending" ? -1 : 1;
@@ -230,13 +240,33 @@ function App() {
           </div>
         )}
         {data.length > 0 && (
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Filter"
-            value={filter}
-            onChange={handleFilterChange}
-          />
+          <>
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Filter"
+              value={filter}
+              onChange={handleFilterChange}
+            />
+            <div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isHeader}
+                  onChange={handleHeaderCheckboxChange}
+                />
+                First row is header
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={exactMatch}
+                  onChange={handleExactMatchCheckboxChange}
+                />
+                Exact match
+              </label>
+            </div>
+          </>
         )}
         {data.length > 0 ? (
           <div>
@@ -246,18 +276,22 @@ function App() {
             </p>
             <table>
               <thead>
-                <tr>
-                  {data[0].map((header, index) => (
-                    <th key={index} onClick={() => handleSort(index)}>
-                      {header}
-                      {sortConfig && sortConfig.key === index && (
-                        <span>
-                          {sortConfig.direction === "ascending" ? " 🔼" : " 🔽"}
-                        </span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
+                {isHeader && (
+                  <tr>
+                    {data[0].map((header, index) => (
+                      <th key={index} onClick={() => handleSort(index)}>
+                        {header}
+                        {sortConfig && sortConfig.key === index && (
+                          <span>
+                            {sortConfig.direction === "ascending"
+                              ? " 🔼"
+                              : " 🔽"}
+                          </span>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {displayedData.map((row, rowIndex) => (
