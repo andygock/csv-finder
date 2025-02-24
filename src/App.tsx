@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
 import Papa from "papaparse";
+import React, { useEffect, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
-import SettingsDialog from "./SettingsDialog";
 import useSettings from "./hooks/useSettings";
+import PasteBox from "./PasteBox";
+import SettingsDialog from "./SettingsDialog";
 
 const defaultDragText = "Drag and drop a CSV file here.";
 
@@ -56,58 +57,19 @@ function App() {
     };
   }, [data.length]);
 
-  // paste event
-  useEffect(() => {
-    const handlePaste = (event: ClipboardEvent) => {
-      // console.log("paste event");
-      if (document.activeElement !== inputRef.current) {
-        const pastedData = event.clipboardData?.getData("text");
-        if (pastedData) {
-          const delimiter = pastedData.includes("\t") ? "\t" : ",";
-          Papa.parse(pastedData, {
-            // header: settings.headers ?? true,
-            skipEmptyLines: true,
-            delimiter,
-            complete: (result) => {
-              if (result.errors.length) {
-                toast.error("Invalid data format.");
-              } else {
-                setData(result.data as string[][]);
-                setDragText("Data loaded successfully!");
-                toast.success("Pasted data loaded successfully.");
-              }
-            },
-          });
-        } else {
-          toast.error("Unsupported data type.");
-        }
-      }
-    };
-
-    window.addEventListener("paste", handlePaste);
-    return () => {
-      window.removeEventListener("paste", handlePaste);
-    };
-  }, []);
-
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     // console.log("drop event");
     event.preventDefault();
     setIsDragging(false);
     const file = event.dataTransfer.files[0];
     if (file && file.name.toLowerCase().endsWith(".csv")) {
-      Papa.parse(file, {
-        // header: settings.headers ?? true,
-        skipEmptyLines: true,
-        complete: (result) => {
-          if (result.errors.length) {
-            toast.error("Invalid data format.");
-          } else {
-            setData(result.data as string[][]);
-            setDragText("CSV file loaded successfully!");
-          }
-        },
-      });
+      // get file content as text
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        loadTextData(text);
+      };
+      reader.readAsText(file);
     } else {
       setDragText("Please drop a valid CSV file.");
     }
@@ -133,6 +95,28 @@ function App() {
     }
     setIsDragging(false);
     setDragText("Drag and drop a CSV file here");
+  };
+
+  const handlePasteBoxSubmit = (text: string) => {
+    loadTextData(text);
+  };
+
+  const loadTextData = (text: string) => {
+    const delimiter = text.includes("\t") ? "\t" : ",";
+    Papa.parse(text, {
+      // header: settings.headers ?? true,
+      skipEmptyLines: true,
+      delimiter,
+      complete: (result) => {
+        if (result.errors.length) {
+          toast.error("Invalid data format.");
+        } else {
+          setData(result.data as string[][]);
+          setDragText("Data loaded successfully.");
+          toast.success("Data loaded successfully.");
+        }
+      },
+    });
   };
 
   const handleFilterChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,10 +279,11 @@ function App() {
         ) : (
           <div>
             <p className="drag-text">{dragText}</p>
+            <PasteBox onSubmit={handlePasteBoxSubmit} />
             <p className="privacy">
-              All file loading and data processing occur entirely within your
-              web browser. No data is sent to any external servers, ensuring
-              your privacy.
+              All file loading and data processing occur only{" "}
+              <strong>within your web browser</strong>. No data is sent to any
+              external servers, ensuring your privacy.
             </p>
           </div>
         )}
@@ -308,7 +293,11 @@ function App() {
         </footer>
       </div>
       <SettingsDialog settings={settings} setSettings={setSettings} />
-      <ToastContainer autoClose={1000} pauseOnFocusLoss={false} />
+      <ToastContainer
+        autoClose={1000}
+        pauseOnFocusLoss={false}
+        position="bottom-center"
+      />
     </div>
   );
 }

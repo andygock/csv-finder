@@ -1,32 +1,23 @@
 # CSV Finder
 
-This application allows you to upload a CSV file, filter its contents, and highlight matching results. It is built using React, TypeScript, and Vite.
+This application allows you to upload a CSV/TSV file data, filter its contents, and highlight matching results.
 
 ## Features
 
-- Drag and drop a CSV file to upload and parse its contents.
+- Drag and drop a CSV or TSV file, or paste contents to upload and parse its contents.
 - Filter the CSV data using a text input field.
 - Supports multiple filter tokens separated by spaces.
 - Highlights matching text in the table.
 - Click on any cell to copy its content to the clipboard.
-- Provides visual feedback using `react-toastify` for clipboard actions.
 
 ## Usage
 
-1. Drag and drop a CSV file into the designated area.
+1. Drag and drop a CSV file into the designated area or paste contents into paste field. Compatible with copy and pasting from spreadsheets.
 2. Use the input field to filter the data. You can enter multiple tokens separated by spaces to find matches in any order.
 3. Click on any cell to copy its content to the clipboard.
 
-## Installation
+## Development
 
 1. Clone the repository.
 2. Install dependencies using `pnpm install`.
 3. Start the development server using `pnpm dev`.
-
-## Technologies Used
-
-- React
-- TypeScript
-- Vite
-- PapaParse
-- React-Toastify
