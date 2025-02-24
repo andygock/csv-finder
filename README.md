@@ -16,6 +16,8 @@ This application allows you to upload a CSV/TSV file data, filter its contents, 
 2. Use the input field to filter the data. You can enter multiple tokens separated by spaces to find matches in any order.
 3. Click on any cell to copy its content to the clipboard.
 
+If using auto delimiter detection, if the first row includes a tab character, the file will be parsed as TSV. Otherwise, it will be parsed as CSV.
+
 ## Development
 
 1. Clone the repository.

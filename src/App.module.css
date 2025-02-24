@@ -105,3 +105,14 @@ footer {
 h1 {
   color: #333;
 }
+
+.select {
+  margin-left: 0.2rem;
+  padding: 0.2rem;
+  font-size: small;
+}
+
+.rowNumber {
+  font-weight: bold;
+  cursor: pointer;
+}

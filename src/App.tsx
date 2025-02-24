@@ -22,6 +22,9 @@ function App() {
   const [settings, setSettings] = useSettings();
   const [isHeader, setIsHeader] = useState(true);
   const [exactMatch, setExactMatch] = useState(false);
+  const [delimiter, setDelimiter] = useState("auto");
+  const [skipEmptyRows, setSkipEmptyRows] = useState(true);
+  const [simplifyNumbers, setSimplifyNumbers] = useState(true);
 
   // key down
   useEffect(() => {
@@ -103,12 +106,42 @@ function App() {
     loadTextData(text);
   };
 
-  const loadTextData = (text: string) => {
-    const delimiter = text.includes("\t") ? "\t" : ",";
+  const handleDelimiterChange = (
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    setDelimiter(event.target.value);
+
+    // reload data with new delimiter if possible
+    if (data.length > 0) {
+      const dataJoined = data.join("\n");
+      const detectedDelimiter =
+        delimiter === "auto"
+          ? dataJoined.includes("\t")
+            ? "\t"
+            : ","
+          : delimiter;
+
+      loadTextData(dataJoined, {
+        skipEmptyLines: skipEmptyRows,
+        delimiter: detectedDelimiter,
+      });
+    }
+  };
+
+  const handleSkipEmptyRowsChange = () => {
+    setSkipEmptyRows(!skipEmptyRows);
+  };
+
+  const handleSimplifyNumbersChange = () => {
+    setSimplifyNumbers(!simplifyNumbers);
+  };
+
+  const loadTextData = (text: string, options?: any) => {
+    const detectedDelimiter =
+      delimiter === "auto" ? (text.includes("\t") ? "\t" : ",") : delimiter;
     Papa.parse(text, {
-      // header: settings.headers ?? true,
-      skipEmptyLines: true,
-      delimiter,
+      skipEmptyLines: skipEmptyRows,
+      delimiter: detectedDelimiter,
       complete: (result) => {
         if (result.errors.length) {
           toast.error("Invalid data format.");
@@ -118,6 +151,7 @@ function App() {
           toast.success("Data loaded successfully.");
         }
       },
+      ...(options || {}),
     });
   };
 
@@ -163,10 +197,18 @@ function App() {
     );
   };
 
-  const handleCellClick = (text: string) => {
-    const trimmedText = text.trim().replace(/\$/g, "").replace(/,/g, "");
-    navigator.clipboard.writeText(trimmedText);
-    toast.success("Copied: " + trimmedText);
+  const handleCellClick = (text: string, row?: string[]) => {
+    if (row) {
+      const rowText = row.join(delimiter === "auto" ? "," : delimiter);
+      navigator.clipboard.writeText(rowText);
+      toast.success("Copied row: " + rowText);
+    } else {
+      const trimmedText = simplifyNumbers
+        ? text.trim().replace(/\$/g, "").replace(/,/g, "")
+        : text;
+      navigator.clipboard.writeText(trimmedText);
+      toast.success("Copied: " + trimmedText);
+    }
   };
 
   const handleSort = (columnIndex: number) => {
@@ -249,7 +291,20 @@ function App() {
               onChange={handleFilterChange}
               className={styles.input}
             />
+
             <div>
+              {/* <label>
+                Delimiter:
+                <select
+                  value={delimiter}
+                  onChange={handleDelimiterChange}
+                  className={styles.select}
+                >
+                  <option value="auto">Auto</option>
+                  <option value=",">Comma</option>
+                  <option value="\t">Tabs</option>
+                </select>
+              </label> */}
               <label>
                 <input
                   type="checkbox"
@@ -266,6 +321,22 @@ function App() {
                 />
                 Exact match
               </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={skipEmptyRows}
+                  onChange={handleSkipEmptyRowsChange}
+                />
+                Skip empty rows
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={simplifyNumbers}
+                  onChange={handleSimplifyNumbersChange}
+                />
+                Copy unformatted numbers
+              </label>
             </div>
           </>
         )}
@@ -279,6 +350,7 @@ function App() {
               <thead>
                 {isHeader && (
                   <tr>
+                    <th>#</th>
                     {data[0].map((header, index) => (
                       <th key={index} onClick={() => handleSort(index)}>
                         {header}
@@ -297,6 +369,12 @@ function App() {
               <tbody>
                 {displayedData.map((row, rowIndex) => (
                   <tr key={rowIndex}>
+                    <td
+                      className={styles.rowNumber}
+                      onClick={() => handleCellClick("", row)}
+                    >
+                      {rowIndex + 1}
+                    </td>
                     {row.map((cell, cellIndex) => (
                       <td
                         key={cellIndex}
