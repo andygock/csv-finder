@@ -11,7 +11,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
   setSettings,
 }) => {
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSettings({ ...settings, foobar: event.target.checked });
+    setSettings({ ...settings, headers: event.target.checked });
   };
 
   return (
@@ -21,13 +21,12 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
         <label>
           <input
             type="checkbox"
-            checked={settings.foobar}
+            checked={settings.headers}
             onChange={handleChange}
           />
-          foobar
+          Import data has headers
         </label>
-        <p>Coming soon.</p>
-        <div>
+        <div className="buttons">
           <button type="submit">Close</button>
         </div>
       </form>

@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 
 export interface Settings {
-  foobar: boolean;
+  headers: boolean;
 }
 
 const useSettings = () => {
-  const [settings, setSettings] = useState<Settings>({ foobar: false });
+  const [settings, setSettings] = useState<Settings>({ headers: true });
 
   useEffect(() => {
     const savedSettings = localStorage.getItem("csvFinderSettings");
@@ -16,10 +16,10 @@ const useSettings = () => {
 
   useEffect(() => {
     localStorage.setItem("csvFinderSettings", JSON.stringify(settings));
-    if (settings.foobar) {
-      // document.body.classList.add("dark-mode");
+    if (settings.headers) {
+      //
     } else {
-      // document.body.classList.remove("dark-mode");
+      //
     }
   }, [settings]);
 

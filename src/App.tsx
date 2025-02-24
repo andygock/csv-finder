@@ -6,11 +6,13 @@ import "./App.css";
 import SettingsDialog from "./SettingsDialog";
 import useSettings from "./hooks/useSettings";
 
+const defaultDragText = "Drag and drop a CSV file here.";
+
 function App() {
   const [data, setData] = useState<string[][]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [filter, setFilter] = useState("");
-  const [dragText, setDragText] = useState("Drag and drop a CSV file here");
+  const [dragText, setDragText] = useState(defaultDragText);
   const [sortConfig, setSortConfig] = useState<{
     key: number;
     direction: string;
@@ -18,14 +20,30 @@ function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [settings, setSettings] = useSettings();
 
+  // key down
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // console.log("keydown event");
+
       if (event.key === "Escape") {
+        // cancel filter
         setFilter("");
       } else if (
         /^[a-zA-Z0-9]$/.test(event.key) &&
         document.activeElement !== inputRef.current
       ) {
+        // check if it was ctrl + v past event
+        if (event.ctrlKey && event.key === "v") {
+          // do not proceed, will be handled by paste event elsewhere
+          return;
+        }
+
+        // if there is no data loaded, do not proceed
+        if (!data.length) {
+          return;
+        }
+
+        // add character to filter
         event.preventDefault();
         setFilter((prevFilter) => prevFilter + event.key);
         inputRef.current?.focus();
@@ -36,18 +54,58 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
+  }, [data.length]);
+
+  // paste event
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      // console.log("paste event");
+      if (document.activeElement !== inputRef.current) {
+        const pastedData = event.clipboardData?.getData("text");
+        if (pastedData) {
+          const delimiter = pastedData.includes("\t") ? "\t" : ",";
+          Papa.parse(pastedData, {
+            // header: settings.headers ?? true,
+            skipEmptyLines: true,
+            delimiter,
+            complete: (result) => {
+              if (result.errors.length) {
+                toast.error("Invalid data format.");
+              } else {
+                setData(result.data as string[][]);
+                setDragText("Data loaded successfully!");
+                toast.success("Pasted data loaded successfully.");
+              }
+            },
+          });
+        } else {
+          toast.error("Unsupported data type.");
+        }
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => {
+      window.removeEventListener("paste", handlePaste);
+    };
   }, []);
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    // console.log("drop event");
     event.preventDefault();
     setIsDragging(false);
     const file = event.dataTransfer.files[0];
-
     if (file && file.name.toLowerCase().endsWith(".csv")) {
       Papa.parse(file, {
+        // header: settings.headers ?? true,
+        skipEmptyLines: true,
         complete: (result) => {
-          setData(result.data as string[][]);
-          setDragText("CSV file loaded successfully!");
+          if (result.errors.length) {
+            toast.error("Invalid data format.");
+          } else {
+            setData(result.data as string[][]);
+            setDragText("CSV file loaded successfully!");
+          }
         },
       });
     } else {
@@ -56,17 +114,20 @@ function App() {
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    // console.log("dragover event");
     event.preventDefault();
     setIsDragging(true); // Ensure isDragging remains true
     setDragText("Release to upload the CSV file");
   };
 
   const handleDragEnter = () => {
+    // console.log("dragenter event");
     setIsDragging(true);
     setDragText("Release to upload the CSV file");
   };
 
   const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    // console.log("dragleave event");
     if (event.currentTarget.contains(event.relatedTarget as Node)) {
       return;
     }
@@ -126,6 +187,17 @@ function App() {
     setSortConfig({ key: columnIndex, direction });
   };
 
+  const toggleSettingsDialog = () => {
+    const dialog = document.getElementById(
+      "settingsDialog"
+    ) as HTMLDialogElement;
+    if (dialog.open) {
+      dialog.close();
+    } else {
+      dialog.showModal();
+    }
+  };
+
   const sortedData = (data: string[][]) => {
     if (!sortConfig) return data;
     const sorted = [...data].sort((a, b) => {
@@ -138,19 +210,10 @@ function App() {
     return sorted;
   };
 
-  const toggleSettingsDialog = () => {
-    const dialog = document.getElementById(
-      "settingsDialog"
-    ) as HTMLDialogElement;
-    if (dialog.open) {
-      dialog.close();
-    } else {
-      dialog.showModal();
-    }
-  };
-
   const filteredData = filterData(data, filter);
   const displayedData = sortedData(filteredData);
+
+  // console.log("data", data);
 
   return (
     <div>
@@ -162,11 +225,24 @@ function App() {
         className={"drop " + (isDragging ? "dragging" : "")}
       >
         <div className="settings">
-          <button onClick={toggleSettingsDialog}>⚙️</button>
+          {/* <button onClick={toggleSettingsDialog}>⚙️</button> */}
+          {data.length > 0 && (
+            <button
+              onClick={() => {
+                // clear loaded data
+                setData([]);
+                setFilter("");
+                setDragText(defaultDragText);
+              }}
+            >
+              ❌
+            </button>
+          )}
         </div>
         {!data.length && (
           <div className="header">
             <h1>CSV Finder</h1>
+            <p>Load and search CSV data for people in a hurry.</p>
           </div>
         )}
         {data.length > 0 && (
@@ -219,7 +295,7 @@ function App() {
         ) : (
           <div>
             <p className="drag-text">{dragText}</p>
-            <p>
+            <p className="privacy">
               All file loading and data processing occur entirely within your
               web browser. No data is sent to any external servers, ensuring
               your privacy.
@@ -227,8 +303,7 @@ function App() {
           </div>
         )}
         <footer className="footer">
-          &copy; {new Date().getFullYear()}{" "}
-          <a href="https://gock.net/">Andy Gock</a> |{" "}
+          Made by <a href="https://gock.net/">Andy Gock</a> |{" "}
           <a href="https://github.com/andygock/csv-finder">GitHub</a>
         </footer>
       </div>
