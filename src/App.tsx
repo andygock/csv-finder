@@ -3,6 +3,8 @@ import Papa from "papaparse";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
+import SettingsDialog from "./SettingsDialog";
+import useSettings from "./hooks/useSettings";
 
 function App() {
   const [data, setData] = useState<string[][]>([]);
@@ -14,6 +16,7 @@ function App() {
     direction: string;
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [settings, setSettings] = useSettings();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -135,6 +138,17 @@ function App() {
     return sorted;
   };
 
+  const toggleSettingsDialog = () => {
+    const dialog = document.getElementById(
+      "settingsDialog"
+    ) as HTMLDialogElement;
+    if (dialog.open) {
+      dialog.close();
+    } else {
+      dialog.showModal();
+    }
+  };
+
   const filteredData = filterData(data, filter);
   const displayedData = sortedData(filteredData);
 
@@ -147,6 +161,9 @@ function App() {
         onDragLeave={handleDragLeave}
         className={"drop " + (isDragging ? "dragging" : "")}
       >
+        <div className="settings">
+          <button onClick={toggleSettingsDialog}>⚙️</button>
+        </div>
         {!data.length && (
           <div className="header">
             <h1>CSV Finder</h1>
@@ -215,6 +232,7 @@ function App() {
           <a href="https://github.com/andygock/csv-finder">GitHub</a>
         </footer>
       </div>
+      <SettingsDialog settings={settings} setSettings={setSettings} />
       <ToastContainer autoClose={1000} pauseOnFocusLoss={false} />
     </div>
   );
