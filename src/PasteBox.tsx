@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import styles from "./PasteBox.module.css";
 
 export default function PasteBox({
   onSubmit = () => {},
@@ -26,9 +27,9 @@ export default function PasteBox({
   }, [text]);
 
   return (
-    <div className="paste-box-container">
+    <div className={styles.pasteBoxContainer}>
       <textarea
-        className="paste-box"
+        className={styles.pasteBox}
         placeholder="Paste your CSV or TSV data here. Spreadsheet compatible. Shortcut: Ctrl + Enter to load."
         value={text}
         onChange={(e) => setText(e.target.value)}

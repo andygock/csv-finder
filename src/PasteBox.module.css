@@ -1,0 +1,28 @@
+.pasteBoxContainer {
+  border: 1px solid var(--border-color);
+  padding: var(--padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--margin);
+}
+
+.pasteBoxContainer button {
+  margin: 2px;
+}
+
+.pasteBox {
+  width: 100%;
+  height: 160px;
+  border: 1px solid #ccc;
+  padding: var(--padding);
+  font-size: medium;
+  font-family: monospace;
+  resize: none;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+}
+
+.pasteBox:focus {
+  outline: none;
+  border-color: #007bff;
+}

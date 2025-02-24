@@ -2,7 +2,7 @@ import Papa from "papaparse";
 import React, { useEffect, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import "./App.css";
+import styles from "./App.module.css";
 import useSettings from "./hooks/useSettings";
 import PasteBox from "./PasteBox";
 import SettingsDialog from "./SettingsDialog";
@@ -140,7 +140,7 @@ function App() {
       <>
         {parts.map((part, index) =>
           tokens.includes(part.toLowerCase()) ? (
-            <span key={index} className="highlight">
+            <span key={index} className={styles.highlight}>
               {part}
             </span>
           ) : (
@@ -216,9 +216,9 @@ function App() {
         onDragOver={handleDragOver}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
-        className={"drop " + (isDragging ? "dragging" : "")}
+        className={`${styles.drop} ${isDragging ? styles.dragging : ""}`}
       >
-        <div className="settings">
+        <div className={styles.settings}>
           {/* <button onClick={toggleSettingsDialog}>⚙️</button> */}
           {data.length > 0 && (
             <button
@@ -234,7 +234,7 @@ function App() {
           )}
         </div>
         {!data.length && (
-          <div className="header">
+          <div className={styles.header}>
             <h1>CSV Finder</h1>
             <p>Load and search CSV data for people in a hurry.</p>
           </div>
@@ -247,6 +247,7 @@ function App() {
               placeholder="Filter"
               value={filter}
               onChange={handleFilterChange}
+              className={styles.input}
             />
             <div>
               <label>
@@ -270,11 +271,11 @@ function App() {
         )}
         {data.length > 0 ? (
           <div>
-            <p className="row-info">
+            <p className={styles.rowInfo}>
               Loaded rows: {data.length - 1}, Displayed rows:{" "}
               {displayedData.length}
             </p>
-            <table>
+            <table className={styles.table}>
               <thead>
                 {isHeader && (
                   <tr>
@@ -300,7 +301,7 @@ function App() {
                       <td
                         key={cellIndex}
                         onClick={() => handleCellClick(cell)}
-                        className="cell"
+                        className={styles.cell}
                       >
                         {filter ? highlightText(cell, filter) : cell}
                       </td>
@@ -312,16 +313,16 @@ function App() {
           </div>
         ) : (
           <div>
-            <p className="drag-text">{dragText}</p>
+            <p className={styles.dragText}>{dragText}</p>
             <PasteBox onSubmit={handlePasteBoxSubmit} />
-            <p className="privacy">
+            <p className={styles.privacy}>
               All file loading and data processing occur only{" "}
               <strong>within your web browser</strong>. No data is sent to any
               external servers, ensuring your privacy.
             </p>
           </div>
         )}
-        <footer className="footer">
+        <footer className={styles.footer}>
           Made by <a href="https://gock.net/">Andy Gock</a> |{" "}
           <a href="https://github.com/andygock/csv-finder">GitHub</a>
         </footer>
