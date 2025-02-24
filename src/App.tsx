@@ -22,9 +22,10 @@ function App() {
   const [settings, setSettings] = useSettings();
   const [isHeader, setIsHeader] = useState(true);
   const [exactMatch, setExactMatch] = useState(false);
-  const [delimiter, setDelimiter] = useState("auto");
   const [skipEmptyRows, setSkipEmptyRows] = useState(true);
   const [simplifyNumbers, setSimplifyNumbers] = useState(true);
+  const [parseResults, setParseResults] = useState<any>(null);
+  const [delimiterWithCopy, setDelimiterWithCopy] = useState<"," | "\t">("\t");
 
   // key down
   useEffect(() => {
@@ -106,28 +107,6 @@ function App() {
     loadTextData(text);
   };
 
-  const handleDelimiterChange = (
-    event: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    setDelimiter(event.target.value);
-
-    // reload data with new delimiter if possible
-    if (data.length > 0) {
-      const dataJoined = data.join("\n");
-      const detectedDelimiter =
-        delimiter === "auto"
-          ? dataJoined.includes("\t")
-            ? "\t"
-            : ","
-          : delimiter;
-
-      loadTextData(dataJoined, {
-        skipEmptyLines: skipEmptyRows,
-        delimiter: detectedDelimiter,
-      });
-    }
-  };
-
   const handleSkipEmptyRowsChange = () => {
     setSkipEmptyRows(!skipEmptyRows);
   };
@@ -137,11 +116,8 @@ function App() {
   };
 
   const loadTextData = (text: string, options?: any) => {
-    const detectedDelimiter =
-      delimiter === "auto" ? (text.includes("\t") ? "\t" : ",") : delimiter;
-    Papa.parse(text, {
+    const result = Papa.parse(text, {
       skipEmptyLines: skipEmptyRows,
-      delimiter: detectedDelimiter,
       complete: (result) => {
         if (result.errors.length) {
           toast.error("Invalid data format.");
@@ -149,6 +125,7 @@ function App() {
           setData(result.data as string[][]);
           setDragText("Data loaded successfully.");
           toast.success("Data loaded successfully.");
+          setParseResults(result);
         }
       },
       ...(options || {}),
@@ -199,9 +176,17 @@ function App() {
 
   const handleCellClick = (text: string, row?: string[]) => {
     if (row) {
-      const rowText = row.join(delimiter === "auto" ? "," : delimiter);
-      navigator.clipboard.writeText(rowText);
-      toast.success("Copied row: " + rowText);
+      const delimiterName = delimiterWithCopy === "," ? "comma" : "tab";
+      let out = "";
+      if (delimiterWithCopy === ",") {
+        out = row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(", ");
+        navigator.clipboard.writeText(out);
+      } else if (delimiterWithCopy === "\t") {
+        out = row.join("\t");
+        navigator.clipboard.writeText(out);
+      }
+
+      toast.success(`Copied row with ${delimiterName} delimiters: ${out}`);
     } else {
       const trimmedText = simplifyNumbers
         ? text.trim().replace(/\$/g, "").replace(/,/g, "")
@@ -293,18 +278,6 @@ function App() {
             />
 
             <div>
-              {/* <label>
-                Delimiter:
-                <select
-                  value={delimiter}
-                  onChange={handleDelimiterChange}
-                  className={styles.select}
-                >
-                  <option value="auto">Auto</option>
-                  <option value=",">Comma</option>
-                  <option value="\t">Tabs</option>
-                </select>
-              </label> */}
               <label>
                 <input
                   type="checkbox"
