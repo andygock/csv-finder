@@ -203,8 +203,9 @@ function App() {
           <div>
             <p className="drag-text">{dragText}</p>
             <p>
-              Loaded files and processing of data is performed in your web
-              browser only. It is never sent to any other third party servers.
+              All file loading and data processing occur entirely within your
+              web browser. No data is sent to any external servers, ensuring
+              your privacy.
             </p>
           </div>
         )}
