@@ -4,23 +4,36 @@ export interface Settings {
   headers: boolean;
 }
 
+const storageKey = "csvFinderSettings";
+const defaultSettings: Settings = { headers: true };
+
+const readSettings = (): Settings => {
+  try {
+    const savedSettings = localStorage.getItem(storageKey);
+    if (!savedSettings) return defaultSettings;
+
+    const parsedSettings: unknown = JSON.parse(savedSettings);
+    if (
+      typeof parsedSettings === "object" &&
+      parsedSettings !== null &&
+      "headers" in parsedSettings
+    ) {
+      return {
+        headers: Boolean(parsedSettings.headers),
+      };
+    }
+  } catch {
+    return defaultSettings;
+  }
+
+  return defaultSettings;
+};
+
 const useSettings = () => {
-  const [settings, setSettings] = useState<Settings>({ headers: true });
+  const [settings, setSettings] = useState<Settings>(readSettings);
 
   useEffect(() => {
-    const savedSettings = localStorage.getItem("csvFinderSettings");
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings));
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("csvFinderSettings", JSON.stringify(settings));
-    if (settings.headers) {
-      //
-    } else {
-      //
-    }
+    localStorage.setItem(storageKey, JSON.stringify(settings));
   }, [settings]);
 
   return [settings, setSettings] as const;

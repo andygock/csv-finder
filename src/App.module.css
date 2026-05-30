@@ -36,33 +36,33 @@
   border-color: #000;
 }
 
-table {
+.table {
   width: 100%;
   border-collapse: collapse;
   margin-top: var(--margin);
 }
 
-th,
-td {
+.table th,
+.table td {
   padding: calc(var(--padding) * 0.33);
   text-align: left;
   border-bottom: 1px solid var(--border-color);
 }
 
-th {
+.table th {
   background-color: #f2f2f2;
   cursor: pointer;
 }
 
-th span {
+.table th span {
   margin-left: var(--margin);
 }
 
-tr:hover {
+.table tr:hover {
   background-color: var(--hover-color);
 }
 
-input[type="text"] {
+.input {
   width: 80%;
   padding: 1rem;
   margin: var(--margin) 0;
@@ -84,7 +84,7 @@ input[type="text"] {
   margin-top: var(--margin);
 }
 
-footer {
+.footer {
   font-size: small;
   text-align: right;
   margin-top: 1rem;
@@ -102,7 +102,7 @@ footer {
   gap: 0.5rem;
 }
 
-h1 {
+.header h1 {
   color: #333;
 }
 

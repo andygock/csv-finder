@@ -1,5 +1,5 @@
-import Papa from "papaparse";
-import React, { useEffect, useRef, useState } from "react";
+import Papa, { type ParseConfig } from "papaparse";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import styles from "./App.module.css";
@@ -9,22 +9,36 @@ import SettingsDialog from "./SettingsDialog";
 
 const defaultDragText = "Drag and drop a CSV file here.";
 
+type SortDirection = "ascending" | "descending";
+type SortConfig = {
+  key: number;
+  direction: SortDirection;
+};
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getSearchTokens = (value: string, exactMatch: boolean) => {
+  const trimmedValue = value.trim().toLowerCase();
+  if (!trimmedValue) return [];
+
+  return exactMatch
+    ? [trimmedValue]
+    : trimmedValue.split(/\s+/).filter(Boolean);
+};
+
 function App() {
   const [data, setData] = useState<string[][]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [filter, setFilter] = useState("");
   const [dragText, setDragText] = useState(defaultDragText);
-  const [sortConfig, setSortConfig] = useState<{
-    key: number;
-    direction: string;
-  } | null>(null);
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [settings, setSettings] = useSettings();
-  const [isHeader, setIsHeader] = useState(true);
+  const isHeader = settings.headers;
   const [exactMatch, setExactMatch] = useState(false);
   const [skipEmptyRows, setSkipEmptyRows] = useState(true);
   const [simplifyNumbers, setSimplifyNumbers] = useState(true);
-  const [parseResults, setParseResults] = useState<any>(null);
   const [delimiterWithCopy, setDelimiterWithCopy] = useState<"," | "\t">("\t");
 
   // key down
@@ -115,17 +129,16 @@ function App() {
     setSimplifyNumbers(!simplifyNumbers);
   };
 
-  const loadTextData = (text: string, options?: any) => {
-    const result = Papa.parse(text, {
+  const loadTextData = (text: string, options?: ParseConfig<string[]>) => {
+    Papa.parse<string[]>(text, {
       skipEmptyLines: skipEmptyRows,
       complete: (result) => {
         if (result.errors.length) {
           toast.error("Invalid data format.");
         } else {
-          setData(result.data as string[][]);
+          setData(result.data);
           setDragText("Data loaded successfully.");
           toast.success("Data loaded successfully.");
-          setParseResults(result);
         }
       },
       ...(options || {}),
@@ -137,7 +150,10 @@ function App() {
   };
 
   const handleHeaderCheckboxChange = () => {
-    setIsHeader(!isHeader);
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      headers: !currentSettings.headers,
+    }));
   };
 
   const handleExactMatchCheckboxChange = () => {
@@ -145,8 +161,12 @@ function App() {
   };
 
   const highlightText = (text: string, highlight: string) => {
-    const tokens = highlight.toLowerCase().split(" ");
-    const parts = text.split(new RegExp(`(${tokens.join("|")})`, "gi"));
+    const tokens = getSearchTokens(highlight, exactMatch);
+    if (!tokens.length) return text;
+
+    const pattern = tokens.map(escapeRegExp).join("|");
+    const parts = text.split(new RegExp(`(${pattern})`, "gi"));
+
     return (
       <>
         {parts.map((part, index) =>
@@ -156,48 +176,45 @@ function App() {
             </span>
           ) : (
             part
-          )
+          ),
         )}
       </>
     );
   };
 
-  const filterData = (data: string[][], filter: string) => {
-    if (!filter) return isHeader ? data.slice(1) : data;
-    const tokens = exactMatch
-      ? [filter.trim().toLowerCase()]
-      : filter.toLowerCase().split(" ");
-    return (isHeader ? data.slice(1) : data).filter((row) =>
-      tokens.every((token) =>
-        row.some((cell) => cell.toLowerCase().includes(token))
-      )
-    );
+  const copyText = async (text: string, successMessage: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(successMessage);
+    } catch {
+      toast.error("Could not copy to clipboard.");
+    }
   };
 
-  const handleCellClick = (text: string, row?: string[]) => {
+  const handleCellClick = async (text: string, row?: string[]) => {
     if (row) {
       const delimiterName = delimiterWithCopy === "," ? "comma" : "tab";
       let out = "";
       if (delimiterWithCopy === ",") {
-        out = row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(", ");
-        navigator.clipboard.writeText(out);
+        out = row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",");
       } else if (delimiterWithCopy === "\t") {
         out = row.join("\t");
-        navigator.clipboard.writeText(out);
       }
 
-      toast.success(`Copied row with ${delimiterName} delimiters: ${out}`);
+      await copyText(
+        out,
+        `Copied row with ${delimiterName} delimiters: ${out}`,
+      );
     } else {
       const trimmedText = simplifyNumbers
         ? text.trim().replace(/\$/g, "").replace(/,/g, "")
         : text;
-      navigator.clipboard.writeText(trimmedText);
-      toast.success("Copied: " + trimmedText);
+      await copyText(trimmedText, "Copied: " + trimmedText);
     }
   };
 
   const handleSort = (columnIndex: number) => {
-    let direction = "ascending";
+    let direction: SortDirection = "ascending";
     if (
       sortConfig &&
       sortConfig.key === columnIndex &&
@@ -210,7 +227,7 @@ function App() {
 
   const toggleSettingsDialog = () => {
     const dialog = document.getElementById(
-      "settingsDialog"
+      "settingsDialog",
     ) as HTMLDialogElement;
     if (dialog.open) {
       dialog.close();
@@ -219,20 +236,31 @@ function App() {
     }
   };
 
-  const sortedData = (data: string[][]) => {
-    if (!sortConfig || !isHeader) return data;
-    const sorted = [...data].sort((a, b) => {
+  const filteredData = useMemo(() => {
+    const rows = isHeader ? data.slice(1) : data;
+    const tokens = getSearchTokens(filter, exactMatch);
+    if (!tokens.length) return rows;
+
+    return rows.filter((row) =>
+      tokens.every((token) =>
+        row.some((cell) => cell.toLowerCase().includes(token)),
+      ),
+    );
+  }, [data, exactMatch, filter, isHeader]);
+
+  const displayedData = useMemo(() => {
+    if (!sortConfig || !isHeader) return filteredData;
+
+    return [...filteredData].sort((a, b) => {
       if (a[sortConfig.key] < b[sortConfig.key])
         return sortConfig.direction === "ascending" ? -1 : 1;
       if (a[sortConfig.key] > b[sortConfig.key])
         return sortConfig.direction === "ascending" ? 1 : -1;
       return 0;
     });
-    return sorted;
-  };
+  }, [filteredData, isHeader, sortConfig]);
 
-  const filteredData = filterData(data, filter);
-  const displayedData = sortedData(filteredData);
+  const loadedRowCount = isHeader ? Math.max(data.length - 1, 0) : data.length;
 
   // console.log("data", data);
 
@@ -246,7 +274,7 @@ function App() {
         className={`${styles.drop} ${isDragging ? styles.dragging : ""}`}
       >
         <div className={styles.settings}>
-          {/* <button onClick={toggleSettingsDialog}>⚙️</button> */}
+          <button onClick={toggleSettingsDialog}>Settings</button>
           {data.length > 0 && (
             <button
               onClick={() => {
@@ -256,7 +284,7 @@ function App() {
                 setDragText(defaultDragText);
               }}
             >
-              ❌
+              Clear
             </button>
           )}
         </div>
@@ -303,6 +331,19 @@ function App() {
                 Skip empty rows
               </label>
               <label>
+                Copy row as
+                <select
+                  className={styles.select}
+                  value={delimiterWithCopy}
+                  onChange={(event) =>
+                    setDelimiterWithCopy(event.target.value as "," | "\t")
+                  }
+                >
+                  <option value="\t">Tab</option>
+                  <option value=",">Comma</option>
+                </select>
+              </label>
+              <label>
                 <input
                   type="checkbox"
                   checked={simplifyNumbers}
@@ -316,7 +357,7 @@ function App() {
         {data.length > 0 ? (
           <div>
             <p className={styles.rowInfo}>
-              Loaded rows: {data.length - 1}, Displayed rows:{" "}
+              Loaded rows: {loadedRowCount}, Displayed rows:{" "}
               {displayedData.length}
             </p>
             <table className={styles.table}>
@@ -374,7 +415,6 @@ function App() {
           </div>
         )}
         <footer className={styles.footer}>
-          Made by <a href="https://gock.net/">Andy Gock</a> |{" "}
           <a href="https://github.com/andygock/csv-finder">GitHub</a>
         </footer>
       </div>
