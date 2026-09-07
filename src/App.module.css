@@ -35,12 +35,6 @@
   font-size: clamp(1.6rem, 4vw, 2rem);
   letter-spacing: -0.04em;
 }
-.header p {
-  max-width: 40rem;
-  margin: 0.25rem 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-}
 .drop > p {
   margin: 0;
 }
@@ -173,6 +167,9 @@
   font-size: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.cellButton {
+  font-family: "Roboto Mono", monospace;
 }
 .headingButton {
   font-weight: bold;

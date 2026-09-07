@@ -19,7 +19,7 @@ function App() {
   const [sort, setSort] = useState<SortConfig | null>(null);
   const [sortMode, setSortMode] = useState<"text" | "numeric">("text");
   const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(24);
+  const [pageSize, setPageSize] = useState(25);
   const [delimiter, setDelimiter] = useState<Delimiter>("");
   const [delimiterWithCopy, setDelimiterWithCopy] = useState<"," | "\t">("\t");
   const [simplifyNumbers, setSimplifyNumbers] = useState(true);
@@ -40,7 +40,7 @@ function App() {
     [filter, phrase, skipEmpty, settings.headers, sort, pageIndex, pageSize],
   );
   const dataset = useDataset(query);
-  const { page } = dataset;
+  const { page, load: loadDataset } = dataset;
   const stale =
     dataset.searching || (page !== null && JSON.stringify(page.query) !== JSON.stringify(query));
 
@@ -72,24 +72,77 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [dataset.loaded]);
 
-  const resetView = () => {
+  const resetView = useCallback(() => {
     setFilter("");
     setSort(null);
     setPageIndex(0);
     setFileError("");
-  };
-  const load = (source: File | string) => {
-    resetView();
-    return dataset.load(source, delimiter);
-  };
-  const loadFile = (file?: File) => {
-    if (!file) return;
-    if (!/\.(csv|tsv)$/i.test(file.name)) {
-      setFileError("Choose a CSV or TSV file.");
-      return;
-    }
-    void load(file);
-  };
+  }, []);
+  const load = useCallback(
+    (source: File | string) => {
+      resetView();
+      return loadDataset(source, delimiter);
+    },
+    [delimiter, loadDataset, resetView],
+  );
+  const loadFile = useCallback(
+    (file?: File) => {
+      if (!file) return;
+      if (!/\.(csv|tsv)$/i.test(file.name)) {
+        setFileError("Choose a CSV or TSV file.");
+        return;
+      }
+      void load(file);
+    },
+    [load],
+  );
+
+  // Listen on window so files can be dropped outside the centred content column too.
+  useEffect(() => {
+    const getFileTransfer = (event: DragEvent) => {
+      const transfer = event.dataTransfer;
+      return transfer?.types.includes("Files") ? transfer : null;
+    };
+    const handleDragEnter = (event: DragEvent) => {
+      if (!getFileTransfer(event)) return;
+      event.preventDefault();
+      setIsDragging(true);
+    };
+    const handleDragOver = (event: DragEvent) => {
+      const transfer = getFileTransfer(event);
+      if (!transfer) return;
+      event.preventDefault();
+      transfer.dropEffect = "copy";
+      setIsDragging(true);
+    };
+    const handleDragLeave = (event: DragEvent) => {
+      if (!getFileTransfer(event)) return;
+      if (
+        event.relatedTarget instanceof Node &&
+        document.documentElement.contains(event.relatedTarget)
+      )
+        return;
+      setIsDragging(false);
+    };
+    const handleDrop = (event: DragEvent) => {
+      const transfer = getFileTransfer(event);
+      if (!transfer) return;
+      event.preventDefault();
+      setIsDragging(false);
+      loadFile(transfer.files[0]);
+    };
+
+    window.addEventListener("dragenter", handleDragEnter);
+    window.addEventListener("dragover", handleDragOver);
+    window.addEventListener("dragleave", handleDragLeave);
+    window.addEventListener("drop", handleDrop);
+    return () => {
+      window.removeEventListener("dragenter", handleDragEnter);
+      window.removeEventListener("dragover", handleDragOver);
+      window.removeEventListener("dragleave", handleDragLeave);
+      window.removeEventListener("drop", handleDrop);
+    };
+  }, [loadFile]);
   const copy = useCallback(async (value: string, row = false) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -113,25 +166,7 @@ function App() {
   const pages = page ? Math.max(1, Math.ceil(page.matched / page.pageSize)) : 1;
 
   return (
-    <main
-      className={`${styles.drop} ${isDragging ? styles.dragging : ""}`}
-      onDrop={(event) => {
-        event.preventDefault();
-        setIsDragging(false);
-        loadFile(event.dataTransfer.files[0]);
-      }}
-      onDragOver={(event) => {
-        event.preventDefault();
-        if (event.dataTransfer.types.includes("Files")) setIsDragging(true);
-      }}
-      onDragLeave={(event) => {
-        if (
-          !(event.relatedTarget instanceof Node) ||
-          !event.currentTarget.contains(event.relatedTarget)
-        )
-          setIsDragging(false);
-      }}
-    >
+    <main className={`${styles.drop} ${isDragging ? styles.dragging : ""}`}>
       <div className={styles.toolbar}>
         <button onClick={() => dialogRef.current?.showModal()}>Settings</button>
         {(dataset.loaded || dataset.loading) && (
@@ -147,7 +182,6 @@ function App() {
       </div>
       <header className={styles.header}>
         <h1>CSV Finder</h1>
-        <p>Load and search CSV or TSV data for people in a hurry.</p>
       </header>
       <div className={styles.controls}>
         <label>
@@ -337,9 +371,9 @@ function App() {
                       setPageIndex(0);
                     }}
                   >
-                    <option value={24}>24</option>
-                    <option value={48}>48</option>
-                    <option value={96}>96</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
                   </select>
                 </label>
                 {page.pageSize < pageSize && (
