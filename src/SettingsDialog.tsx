@@ -2,22 +2,25 @@ import React from "react";
 import { Settings } from "./hooks/useSettings";
 
 interface SettingsDialogProps {
+  dialogRef: React.RefObject<HTMLDialogElement | null>;
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
 }
 
 const SettingsDialog: React.FC<SettingsDialogProps> = ({
+  dialogRef,
   settings,
   setSettings,
 }) => {
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSettings({ ...settings, headers: event.target.checked });
+    const headers = event.target.checked;
+    setSettings(current => ({ ...current, headers }));
   };
 
   return (
-    <dialog id="settingsDialog">
+    <dialog ref={dialogRef} aria-labelledby="settingsTitle">
       <form method="dialog">
-        <h2>Settings</h2>
+        <h2 id="settingsTitle">Settings</h2>
         <label>
           <input
             type="checkbox"

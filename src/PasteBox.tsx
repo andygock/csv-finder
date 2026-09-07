@@ -1,42 +1,47 @@
-import { useState, useEffect } from "react";
+import { useRef, useState } from "react";
 import styles from "./PasteBox.module.css";
 
 export default function PasteBox({
-  onSubmit = () => {},
+  onSubmit,
+  disabled = false,
 }: {
-  onSubmit?: (text: string) => void;
+  onSubmit: (text: string) => Promise<boolean>;
+  disabled?: boolean;
 }) {
-  const [readyToSubmit, setReadyToSubmit] = useState(false);
   const [text, setText] = useState("");
+  const submitting = useRef(false);
 
-  const handleSubmit = () => {
-    if (text) {
-      onSubmit(text);
-      setText("");
+  const handleSubmit = async () => {
+    if (!text.trim() || disabled || submitting.current) return;
+    submitting.current = true;
+    try {
+      const submitted = text;
+      if (await onSubmit(submitted)) setText(current => current === submitted ? "" : current);
+    } finally {
+      submitting.current = false;
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.ctrlKey && e.key === "Enter") {
-      handleSubmit();
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      void handleSubmit();
     }
   };
-
-  useEffect(() => {
-    setReadyToSubmit(text.length > 0);
-  }, [text]);
 
   return (
     <div className={styles.pasteBoxContainer}>
       <textarea
+        aria-label="CSV or TSV data to import"
+        disabled={disabled}
         className={styles.pasteBox}
-        placeholder="Paste your CSV or TSV data here. Spreadsheet compatible. Shortcut: Ctrl + Enter to load."
+        placeholder="Paste CSV or TSV data here. Ctrl + Enter (Command + Enter on Mac) to load."
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
       />
       <div>
-        <button onClick={handleSubmit} disabled={!readyToSubmit}>
+        <button onClick={() => void handleSubmit()} disabled={disabled || !text.trim()}>
           Load
         </button>
       </div>
