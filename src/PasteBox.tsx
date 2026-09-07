@@ -16,7 +16,7 @@ export default function PasteBox({
     submitting.current = true;
     try {
       const submitted = text;
-      if (await onSubmit(submitted)) setText(current => current === submitted ? "" : current);
+      if (await onSubmit(submitted)) setText((current) => (current === submitted ? "" : current));
     } finally {
       submitting.current = false;
     }

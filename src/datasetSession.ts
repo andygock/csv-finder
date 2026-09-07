@@ -1,7 +1,10 @@
 import type { Delimiter, Query } from "./data.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
-type WorkerPort = Pick<Worker, "postMessage" | "terminate" | "onmessage" | "onerror" | "onmessageerror">;
+type WorkerPort = Pick<
+  Worker,
+  "postMessage" | "terminate" | "onmessage" | "onerror" | "onmessageerror"
+>;
 
 /** Owns worker lifetime independently of React. Every import gets a fresh worker;
  * source identity and query IDs guard against messages already queued at Clear. */
@@ -25,15 +28,18 @@ export class DatasetSession {
     this.pending = null;
   }
 
-  invalidateQuery(): number { return ++this.queryId; }
+  invalidateQuery(): number {
+    return ++this.queryId;
+  }
 
   query(id: number, query: Query): void {
-    if (id === this.queryId) this.worker?.postMessage({ type: "query", id, query } satisfies WorkerRequest);
+    if (id === this.queryId)
+      this.worker?.postMessage({ type: "query", id, query } satisfies WorkerRequest);
   }
 
   load(source: File | string, delimiter: Delimiter): Promise<boolean> {
     this.stop();
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       this.pending = resolve;
       try {
         const active = this.createWorker();
@@ -43,11 +49,16 @@ export class DatasetSession {
           this.stop();
           this.notify({ type: "error", message });
         };
-        active.onerror = () => fail("The data worker stopped unexpectedly. Try a smaller file or reload the page.");
-        active.onmessageerror = () => fail("Could not receive the processed data. Try a smaller file.");
+        active.onerror = () =>
+          fail("The data worker stopped unexpectedly. Try a smaller file or reload the page.");
+        active.onmessageerror = () =>
+          fail("Could not receive the processed data. Try a smaller file.");
         active.onmessage = ({ data: message }: MessageEvent<WorkerResponse>) => {
           if (this.worker !== active) return;
-          if (message.type === "error") { fail(message.message); return; }
+          if (message.type === "error") {
+            fail(message.message);
+            return;
+          }
           if (message.type === "page" && message.id !== this.queryId) return;
           if (message.type === "loaded") {
             this.pending?.(true);
@@ -58,7 +69,10 @@ export class DatasetSession {
         active.postMessage({ type: "load", source, delimiter } satisfies WorkerRequest);
       } catch {
         this.stop();
-        this.notify({ type: "error", message: "Could not start local data processing. Reload the page and try again." });
+        this.notify({
+          type: "error",
+          message: "Could not start local data processing. Reload the page and try again.",
+        });
       }
     });
   }

@@ -6,7 +6,8 @@ const MAX_RECORD_CHARACTERS = 8 * 1024 * 1024;
 
 async function* textChunks(source: File | string): AsyncGenerator<string> {
   if (typeof source === "string") {
-    for (let offset = 0; offset < source.length; offset += CHUNK_SIZE) yield source.slice(offset, offset + CHUNK_SIZE);
+    for (let offset = 0; offset < source.length; offset += CHUNK_SIZE)
+      yield source.slice(offset, offset + CHUNK_SIZE);
   } else {
     // A decoder must span byte chunks: independently decoding each Blob slice
     // replaces multibyte characters split across boundaries with U+FFFD.
@@ -16,13 +17,17 @@ async function* textChunks(source: File | string): AsyncGenerator<string> {
       try {
         yield decoder.decode(bytes, { stream: true });
       } catch {
-        throw new Error("The file is not valid UTF-8. Export it as UTF-8 CSV or TSV and try again.");
+        throw new Error(
+          "The file is not valid UTF-8. Export it as UTF-8 CSV or TSV and try again.",
+        );
       }
     }
     try {
       yield decoder.decode();
     } catch {
-      throw new Error("The file ends with an incomplete UTF-8 character. Export it as UTF-8 and try again.");
+      throw new Error(
+        "The file ends with an incomplete UTF-8 character. Export it as UTF-8 and try again.",
+      );
     }
   }
 }
@@ -30,8 +35,11 @@ async function* textChunks(source: File | string): AsyncGenerator<string> {
 /** Feed decoded text to Papa's low-level parser, retaining only the unfinished
  * record between chunks. The parser understands quoted, multiline records;
  * splitting on newlines ourselves would corrupt valid CSV. */
-export async function parseInput(source: File | string, delimiter: Delimiter,
-  consume: (result: Papa.ParseResult<string[]>) => void): Promise<void> {
+export async function parseInput(
+  source: File | string,
+  delimiter: Delimiter,
+  consume: (result: Papa.ParseResult<string[]>) => void,
+): Promise<void> {
   let pending = "";
   let parser: Papa.Parser | null = null;
   for await (let chunk of textChunks(source)) {
@@ -40,8 +48,9 @@ export async function parseInput(source: File | string, delimiter: Delimiter,
       // Use the high-level parser solely to detect dialect. Errors caused by a
       // truncated sample are handled by the streaming parser at actual EOF.
       const sample = Papa.parse<string[]>(chunk, { delimiter, preview: 10 });
-      const warning = sample.errors.filter(error => error.code === "UndetectableDelimiter");
-      const newline = sample.meta.linebreak === "\r\n" ? "\r\n" : sample.meta.linebreak === "\r" ? "\r" : "\n";
+      const warning = sample.errors.filter((error) => error.code === "UndetectableDelimiter");
+      const newline =
+        sample.meta.linebreak === "\r\n" ? "\r\n" : sample.meta.linebreak === "\r" ? "\r" : "\n";
       parser = new Papa.Parser({ delimiter: sample.meta.delimiter, newline });
       if (warning.length) consume({ ...sample, data: [], errors: warning });
     }
@@ -50,7 +59,8 @@ export async function parseInput(source: File | string, delimiter: Delimiter,
     pending = pending.slice(result.meta.cursor);
     consume(result);
     // Incomplete giant records would otherwise be rescanned on every chunk.
-    if (pending.length > MAX_RECORD_CHARACTERS) throw new Error("A record exceeds 8 million characters. Split or shorten that record.");
+    if (pending.length > MAX_RECORD_CHARACTERS)
+      throw new Error("A record exceeds 8 million characters. Split or shorten that record.");
   }
   if (parser) consume(parser.parse(pending, 0, false) as Papa.ParseResult<string[]>);
 }

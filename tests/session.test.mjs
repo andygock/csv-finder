@@ -5,15 +5,28 @@ import { DatasetSession } from "../src/datasetSession.ts";
 class FakeWorker {
   sent = [];
   terminated = false;
-  postMessage(message) { this.sent.push(message); }
-  terminate() { this.terminated = true; }
-  emit(data) { this.onmessage({ data }); }
+  postMessage(message) {
+    this.sent.push(message);
+  }
+  terminate() {
+    this.terminated = true;
+  }
+  emit(data) {
+    this.onmessage({ data });
+  }
 }
 
 function setup() {
   const workers = [];
   const messages = [];
-  const session = new DatasetSession(() => { const worker = new FakeWorker(); workers.push(worker); return worker; }, message => messages.push(message));
+  const session = new DatasetSession(
+    () => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      return worker;
+    },
+    (message) => messages.push(message),
+  );
   return { workers, messages, session };
 }
 
@@ -54,7 +67,10 @@ test("stale queries are neither sent nor displayed", async () => {
   assert.equal(workers[0].sent.length, 2);
   workers[0].emit({ type: "page", id: old, page: "obsolete" });
   workers[0].emit({ type: "page", id: latest, page: "current" });
-  assert.deepEqual(messages.map(message => message.type), ["loaded", "page"]);
+  assert.deepEqual(
+    messages.map((message) => message.type),
+    ["loaded", "page"],
+  );
   assert.equal(messages.at(-1).page, "current");
   session.stop();
 });
@@ -70,7 +86,12 @@ test("worker failure resolves the import as unsuccessful and terminates the work
 
 test("unavailable workers report a recoverable error", async () => {
   const messages = [];
-  const session = new DatasetSession(() => { throw new Error("blocked"); }, message => messages.push(message));
+  const session = new DatasetSession(
+    () => {
+      throw new Error("blocked");
+    },
+    (message) => messages.push(message),
+  );
   assert.equal(await session.load("data", ""), false);
   assert.match(messages[0].message, /Could not start/);
 });

@@ -1,0 +1,65 @@
+.form {
+  width: min(90vw, 30rem);
+  padding: 1.5rem;
+  box-sizing: border-box;
+  color: var(--color-text);
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+.intro {
+  margin: 0.35rem 0 1.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  cursor: pointer;
+  line-height: 1.35;
+}
+
+.option input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0.05rem 0 0;
+  accent-color: var(--color-action);
+}
+
+.optionText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.optionTitle {
+  font-weight: 750;
+}
+.optionDescription {
+  color: var(--color-text-muted);
+  font-size: 0.83rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.35rem;
+}
+
+@media (max-width: 480px) {
+  .form {
+    padding: 1.15rem;
+  }
+}
