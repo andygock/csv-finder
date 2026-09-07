@@ -35,7 +35,7 @@ export default function PasteBox({
         aria-label="CSV or TSV data to import"
         disabled={disabled}
         className={styles.pasteBox}
-        placeholder="Paste CSV or TSV data here. Ctrl + Enter (Command + Enter on Mac) to load."
+        placeholder="Paste CSV or TSV data here, or drag and drop a file anywhere. Ctrl + Enter (Command + Enter on Mac) to load."
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}

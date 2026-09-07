@@ -26,6 +26,7 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const query = useMemo(
     () => ({
@@ -168,6 +169,17 @@ function App() {
   return (
     <main className={`${styles.drop} ${isDragging ? styles.dragging : ""}`}>
       <div className={styles.toolbar}>
+        <button onClick={() => fileInputRef.current?.click()}>Open file</button>
+        <input
+          ref={fileInputRef}
+          hidden
+          type="file"
+          accept=".csv,.tsv"
+          onChange={(event) => {
+            loadFile(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
         <button onClick={() => dialogRef.current?.showModal()}>Settings</button>
         {(dataset.loaded || dataset.loading) && (
           <button
@@ -183,41 +195,6 @@ function App() {
       <header className={styles.header}>
         <h1>CSV Finder</h1>
       </header>
-      <div className={styles.controls}>
-        <label>
-          Import delimiter{" "}
-          <select
-            value={delimiter}
-            onChange={(event) => {
-              const value = event.target.value;
-              if (value === "" || value === "," || value === "\t" || value === ";" || value === "|")
-                setDelimiter(value);
-            }}
-          >
-            <option value="">Auto-detect</option>
-            <option value=",">Comma</option>
-            <option value={"\t"}>Tab</option>
-            <option value=";">Semicolon</option>
-            <option value="|">Pipe</option>
-          </select>
-        </label>
-        <label>
-          Open file{" "}
-          <input
-            type="file"
-            accept=".csv,.tsv"
-            onChange={(event) => {
-              loadFile(event.target.files?.[0]);
-              event.target.value = "";
-            }}
-          />
-        </label>
-      </div>
-      <p>
-        {isDragging
-          ? "Release to load the file."
-          : "Drag and drop a CSV or TSV file here, or choose a file above."}
-      </p>
       {(fileError || dataset.error) && (
         <p role="alert" className={styles.notice}>
           {fileError || dataset.error}
@@ -238,7 +215,7 @@ function App() {
       {dataset.loaded && (
         <>
           <label className={styles.search}>
-            Filter{" "}
+            <span className={styles.srOnly}>Filter results</span>
             <input
               ref={inputRef}
               type="search"
@@ -248,7 +225,7 @@ function App() {
                 setFilter(event.target.value);
                 setPageIndex(0);
               }}
-              placeholder="Search all columns"
+              placeholder="Filter: Search all columns"
             />
           </label>
           <div className={styles.controls}>
@@ -410,7 +387,13 @@ function App() {
       <footer className={styles.footer}>
         <a href="https://github.com/andygock/csv-finder">GitHub</a>
       </footer>
-      <SettingsDialog dialogRef={dialogRef} settings={settings} setSettings={setSettings} />
+      <SettingsDialog
+        dialogRef={dialogRef}
+        settings={settings}
+        setSettings={setSettings}
+        delimiter={delimiter}
+        setDelimiter={setDelimiter}
+      />
       <ToastContainer
         autoClose={1500}
         limit={3}

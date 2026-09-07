@@ -20,7 +20,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   padding: 0.65rem;
-  font-size: medium;
+  font-size: 0.875rem;
   font-family: "Geist Mono", monospace;
   line-height: 1.5;
   resize: vertical;
