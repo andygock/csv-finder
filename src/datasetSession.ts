@@ -29,7 +29,13 @@ export class DatasetSession {
   }
 
   invalidateQuery(): number {
-    return ++this.queryId;
+    const id = ++this.queryId;
+    this.worker?.postMessage({ type: "cancel", id } satisfies WorkerRequest);
+    return id;
+  }
+
+  detail(request: Extract<WorkerRequest, { type: "detail" }>): void {
+    this.worker?.postMessage(request);
   }
 
   query(id: number, query: Query): void {
@@ -59,7 +65,11 @@ export class DatasetSession {
             fail(message.message);
             return;
           }
-          if (message.type === "page" && message.id !== this.queryId) return;
+          if (
+            (message.type === "page" || message.type === "queryProgress") &&
+            message.id !== this.queryId
+          )
+            return;
           if (message.type === "loaded") {
             this.pending?.(true);
             this.pending = null;

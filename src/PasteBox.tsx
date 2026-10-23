@@ -1,49 +1,59 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
+import type { KeyboardEvent } from "react";
 import styles from "./PasteBox.module.css";
+import { Button } from "./ui";
 
 export default function PasteBox({
   onSubmit,
   disabled = false,
+  text,
+  setText,
 }: {
   onSubmit: (text: string) => Promise<boolean>;
   disabled?: boolean;
+  text: string;
+  setText: (value: string) => void;
 }) {
-  const [text, setText] = useState("");
   const submitting = useRef(false);
-
   const handleSubmit = async () => {
     if (!text.trim() || disabled || submitting.current) return;
     submitting.current = true;
     try {
-      const submitted = text;
-      if (await onSubmit(submitted)) setText((current) => (current === submitted ? "" : current));
+      await onSubmit(text);
     } finally {
       submitting.current = false;
     }
   };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !e.nativeEvent.isComposing) {
-      e.preventDefault();
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      event.key === "Enter" &&
+      !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault();
       void handleSubmit();
     }
   };
-
   return (
-    <div className={styles.pasteBoxContainer}>
+    <div className={styles.container}>
       <textarea
         aria-label="CSV or TSV data to import"
         disabled={disabled}
-        className={styles.pasteBox}
-        placeholder="Paste CSV or TSV data here, or drag and drop a file anywhere. Ctrl + Enter (Command + Enter on Mac) to load."
+        className={styles.paste}
+        placeholder="Paste CSV or TSV, or drop a file anywhere"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(event) => setText(event.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <div>
-        <button onClick={() => void handleSubmit()} disabled={disabled || !text.trim()}>
-          Load
-        </button>
+      <div className={styles.actions}>
+        <span>Ctrl / ⌘ + Enter to preview · UTF-8 · up to 256 MiB</span>
+        <Button
+          variant="primary"
+          onClick={() => void handleSubmit()}
+          disabled={disabled || !text.trim()}
+        >
+          Preview data
+        </Button>
       </div>
     </div>
   );

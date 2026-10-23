@@ -1,15 +1,16 @@
-import { DataEngine } from "../src/data.ts";
-import { parseInput } from "../src/parseInput.ts";
+import { receive } from "./worker-client.mjs";
+import { Worker } from "node:worker_threads";
 
-// Run without a browser: this measures parsing/query work, not paint time or
-// browser peak memory. Generate input before timing and compare the same queries.
+// Production parser, validation and messaging run in a real Node worker. These
+// timings include structured cloning, but exclude browser layout and clipboard.
 const scenarios = [
-  ["narrow", 10_000, 5],
   ["narrow", 100_000, 5],
-  ["wide", 10_000, 100],
   ["wide", 30_000, 100],
-  ["multiline", 10_000, 10],
+  ["random", 200_000, 5],
+  ["duplicates", 100_000, 5],
+  ["long-decimal", 50_000, 3],
   ["multiline", 100_000, 10],
+  ["long-cell", 32, 2],
 ];
 const base = {
   filter: "",
@@ -20,84 +21,97 @@ const base = {
   page: 0,
   pageSize: 100,
 };
-const measure = async (fn) => {
-  const start = performance.now();
-  const value = await fn();
-  return { value, ms: +(performance.now() - start).toFixed(2) };
-};
+const round = (value) => +value.toFixed(2);
 const results = [];
 for (const [shape, count, columns] of scenarios) {
   globalThis.gc?.();
-  const header = Array.from({ length: columns }, (_, i) => `Column ${i}`).join(",");
-  let csv =
-    header +
-    "\n" +
-    Array.from({ length: count }, (_, row) =>
-      Array.from({ length: columns }, (_, col) =>
-        col === 0
-          ? String(count - row)
-          : shape === "multiline" && col === 1
-            ? '"hello\nworld"'
-            : `value-${row % 100}-${col}`,
-      ).join(","),
-    ).join("\n");
-  const mib = +(Buffer.byteLength(csv) / 1024 / 1024).toFixed(2);
-  const memoryBefore = process.memoryUsage().heapUsed;
+  let seed = 42;
+  const csv = [
+    Array.from({ length: columns }, (_, i) => `Column ${i}`).join(","),
+    ...Array.from({ length: count }, (_, row) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return Array.from({ length: columns }, (_, column) => {
+        if (column === 0) {
+          if (shape === "random") return String(seed);
+          if (shape === "duplicates") return String(seed % 100);
+          if (shape === "long-decimal") return `${seed}00000000000000000.000000000000000${row % 9}`;
+          return String(count - row);
+        }
+        if (shape === "long-cell") return "x".repeat(1024 * 1024) + "needle";
+        if (shape === "multiline" && column === 1) return '"hello\nworld"';
+        return `value-${row % 100}-${column}`;
+      }).join(",");
+    }),
+  ].join("\n");
   const file = new File([csv], "benchmark.csv");
-  const parsed = await measure(async () => {
-    const rows = [];
-    await parseInput(file, ",", (result) => {
-      for (const row of result.data) rows.push(row);
+  const worker = new Worker(new URL("./worker-harness.mjs", import.meta.url));
+  try {
+    await receive(worker, "__ready");
+    const loaded = receive(worker, "loaded");
+    let start = performance.now();
+    worker.postMessage({ type: "load", source: file, delimiter: "," });
+    await loaded;
+    const importMs = performance.now() - start;
+    let id = 0;
+    const query = async (value) => {
+      const requestId = ++id;
+      const page = receive(worker, "page", requestId);
+      const start = performance.now();
+      worker.postMessage({ type: "query", id: requestId, query: value });
+      return { page: (await page).page, ms: performance.now() - start };
+    };
+    await query(base);
+    const filter = shape === "long-cell" ? "needle" : "value-9";
+    const search = await query({ ...base, filter });
+    const narrower = await query({
+      ...base,
+      filter: shape === "long-cell" ? "needle" : "value-99",
     });
-    return rows;
-  });
-  csv = "";
-  const engine = new DataEngine(parsed.value);
-  const first = await measure(() => engine.query(base));
-  const search = await measure(() => engine.query({ ...base, filter: "value-99" }));
-  const sort = await measure(() =>
-    engine.query({ ...base, sort: { key: 0, direction: "ascending", mode: "numeric" } }),
-  );
-  const cachedSearch = await measure(() =>
-    engine.query({
-      ...base,
-      sort: { key: 0, direction: "ascending", mode: "numeric" },
-      filter: "value-99",
-    }),
-  );
-  const nextPage = await measure(() =>
-    engine.query({
-      ...base,
-      sort: { key: 0, direction: "ascending", mode: "numeric" },
-      filter: "value-99",
-      page: 1,
-    }),
-  );
-  const baseline = await measure(() =>
-    parsed.value
-      .slice(1)
-      .filter((row) =>
-        ["value-99"].every((token) => row.some((cell) => cell.toLowerCase().includes(token))),
-      )
-      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
-  );
-  results.push({
-    shape,
-    rows: count,
-    columns,
-    MiB: mib,
-    parse_ms: parsed.ms,
-    first_page_ms: first.ms,
-    search_ms: search.ms,
-    numeric_sort_ms: sort.ms,
-    cached_sort_search_ms: cachedSearch.ms,
-    next_page_ms: nextPage.ms,
-    old_lexical_search_sort_ms: baseline.ms,
-    rendered_cells: first.value.rows.length * columns,
-    heap_growth_MiB: +((process.memoryUsage().heapUsed - memoryBefore) / 1024 / 1024).toFixed(1),
-  });
+    const sorted = { ...base, sort: { key: 0, direction: "ascending", mode: "numeric" } };
+    const sort = await query(sorted);
+    const next = await query({ ...sorted, page: 1 });
+    let cancelMs = null;
+    if (shape === "random") {
+      const sortingId = ++id;
+      const progress = receive(worker, "queryProgress", sortingId);
+      worker.postMessage({
+        type: "query",
+        id: sortingId,
+        query: { ...sorted, sort: { ...sorted.sort, direction: "descending" } },
+      });
+      await progress;
+      const cancelId = ++id;
+      const cancelled = receive(worker, "__cancelled", cancelId);
+      start = performance.now();
+      worker.postMessage({ type: "cancel", id: cancelId });
+      await cancelled;
+      cancelMs = performance.now() - start;
+      await query(base);
+    }
+    const metrics = receive(worker, "__metrics");
+    worker.postMessage({ type: "__metrics" });
+    const memory = await metrics;
+    results.push({
+      shape,
+      rows: count,
+      columns,
+      MiB: round(file.size / 1024 / 1024),
+      import_ms: round(importMs),
+      search_ms: round(search.ms),
+      narrowed_ms: round(narrower.ms),
+      numeric_sort_ms: round(sort.ms),
+      next_page_ms: round(next.ms),
+      page_KiB: round(Buffer.byteLength(JSON.stringify(next.page)) / 1024),
+      cancel_ack_ms: cancelMs === null ? "—" : round(cancelMs),
+      sampled_heap_MiB: round(memory.peakHeap / 1024 / 1024),
+      sampled_arrays_MiB: round(memory.peakArrays / 1024 / 1024),
+      max_tick_gap_ms: round(memory.maxGap),
+    });
+  } finally {
+    await worker.terminate();
+  }
 }
 console.table(results);
 console.log(
-  "Heap growth is an end-of-scenario sample, not peak memory; GC and input generation affect it. Numeric and lexical sorts have different semantics. Browser rendering and worker transfers are not measured.",
+  "Worker heap and typed-array values are sampled maxima, not certified peak memory. Tick gaps include import, GC and timer scheduling. Timings include Node worker transfers, but not browser rendering, input debounce or clipboard operations.",
 );

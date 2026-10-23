@@ -64,7 +64,11 @@ test("stale queries are neither sent nor displayed", async () => {
   const latest = session.invalidateQuery();
   session.query(old, {});
   session.query(latest, {});
-  assert.equal(workers[0].sent.length, 2);
+  assert.equal(workers[0].sent.filter((message) => message.type === "query").length, 1);
+  assert.deepEqual(
+    workers[0].sent.filter((message) => message.type === "cancel").map((message) => message.id),
+    [old, latest],
+  );
   workers[0].emit({ type: "page", id: old, page: "obsolete" });
   workers[0].emit({ type: "page", id: latest, page: "current" });
   assert.deepEqual(

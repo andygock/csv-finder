@@ -1,94 +1,68 @@
 :root {
-  --color-background: #fafafa;
-  --color-surface: #fff;
-  --color-surface-muted: #fafafa;
-  --color-surface-subtle: #f4f4f5;
-  --color-text: #18181b;
-  --color-text-inverse: #fff;
-  --color-text-muted: #71717a;
-  --color-text-secondary: #52525b;
-  --color-text-emphasis: #3f3f46;
-  --color-border: #e4e4e7;
-  --color-border-strong: #d4d4d8;
-  --color-highlight: #e4e4e7;
-  --color-hover: #fafafa;
-  --color-action: #18181b;
-  --color-action-hover: #27272a;
-  --color-action-active: #09090b;
-  --color-action-disabled: #d4d4d8;
-  --color-focus: #a1a1aa;
-  --color-focus-ring: rgba(161, 161, 170, 0.2);
-  --color-link: #52525b;
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 1rem;
-  --radius-highlight: 0.15rem;
-  --space-xs: 0.25rem;
-  --space-sm: 0.5rem;
-  --space-md: 0.65rem;
-  --space-lg: 0.75rem;
-  --space-xl: 1rem;
+  color-scheme: light;
+  --background: #fff;
+  --foreground: #18181b;
+  --card: #fff;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --primary: #18181b;
+  --primary-hover: #3f3f46;
+  --primary-foreground: #fafafa;
+  --accent: #f4f4f5;
+  --border: #e4e4e7;
+  --input: #d4d4d8;
+  --ring: #a1a1aa;
+  --destructive: #b91c1c;
+  --highlight: #fef08a;
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) - 2px);
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --control-height: 1.875rem;
+  --font-sans: "Geist", Arial, sans-serif;
+  --font-mono: "Geist Mono", monospace;
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.16);
 }
-
+* {
+  box-sizing: border-box;
+}
 body {
-  background-color: var(--color-background);
   margin: 0;
-  padding: 0;
-  font-size: 0.875rem;
-  font-family: "Geist", Arial, sans-serif;
-  color: var(--color-text);
-  line-height: 1.5;
+  background: var(--background);
+  color: var(--foreground);
+  font: 13px/1.45 var(--font-sans);
 }
-
-a {
-  color: var(--color-link);
-  text-decoration: none;
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
-
-a:hover {
-  text-decoration: underline;
+button,
+input,
+select,
+textarea,
+summary {
+  -webkit-tap-highlight-color: transparent;
 }
-
-button {
-  background-color: var(--color-action);
-  color: var(--color-text-inverse);
-  border: none;
-  padding: var(--space-sm) var(--space-lg);
-  font-size: 0.875rem;
-  font-family: inherit;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: background-color 0.3s;
-}
-
-button:hover {
-  background-color: var(--color-action-hover);
-}
-
-button:active {
-  background-color: var(--color-action-active);
-}
-
-button:disabled {
-  background-color: var(--color-action-disabled);
-  cursor: not-allowed;
-}
-
-button:focus-visible,
-select:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--color-focus);
+:where(button, input, select, textarea, summary, a):focus-visible {
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-
-dialog {
-  border: none;
-  border-radius: var(--radius-lg);
-  padding: 0;
-  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.24);
+a {
+  color: var(--muted-foreground);
+  text-decoration: none;
 }
-
-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.5);
+a:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+p {
+  margin: 0;
+}
+::selection {
+  background: var(--muted);
 }

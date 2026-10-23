@@ -52,7 +52,10 @@ test("TSV files, BOMs, CRLF and ragged rows load through the Blob reader", async
   assert.equal(messages.at(-1).page.headings[0], "name");
   assert.deepEqual(
     messages.at(-1).page.rows.map((row) => row.cells),
-    [["Alice", "two\nlines"], ["Bob"]],
+    [
+      ["Alice", "two\nlines"],
+      ["Bob", ""],
+    ],
   );
 });
 
@@ -74,7 +77,11 @@ test("quoted records spanning file chunks retain their full contents", async () 
   const source = new File(['name,note\nAlice,"' + note.replaceAll('"', '""') + '"'], "large.csv");
   assert.equal((await load(source, ",")).type, "loaded");
   await globalThis.onmessage({ data: { type: "query", id: 3, query: base } });
-  assert.equal(messages.at(-1).page.rows[0].cells[1], note);
+  assert.ok(messages.at(-1).page.rows[0].cells[1].length <= 240);
+  await globalThis.onmessage({
+    data: { type: "detail", id: 1, row: 1, column: 1, delimiter: ",", simplify: false },
+  });
+  assert.ok(messages.at(-1).value === note);
 });
 
 test("UTF-8 characters split across file chunks remain intact", async () => {
@@ -84,5 +91,8 @@ test("UTF-8 characters split across file chunks remain intact", async () => {
     "loaded",
   );
   await globalThis.onmessage({ data: { type: "query", id: 4, query: base } });
-  assert.equal(messages.at(-1).page.rows[0].cells[1] === note, true);
+  await globalThis.onmessage({
+    data: { type: "detail", id: 2, row: 1, column: 1, delimiter: ",", simplify: false },
+  });
+  assert.ok(messages.at(-1).value === note);
 });

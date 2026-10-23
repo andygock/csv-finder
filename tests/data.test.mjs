@@ -128,7 +128,7 @@ test("ragged rows get headings and bounded pages, including requests beyond the 
   const page = await engine.query({ ...base, pageSize: 1, page: 99 });
   assert.deepEqual(page.headings, ["name", "Column 2"]);
   assert.equal(page.page, 1);
-  assert.deepEqual(page.rows, [{ id: 2, cells: ["b"] }]);
+  assert.deepEqual(page.rows, [{ id: 2, cells: ["b", ""], lengths: [1, 0], offsets: [0, 0] }]);
   const wide = new DataEngine(Array.from({ length: 10 }, () => Array(1000).fill("x")));
   assert.equal((await wide.query(base)).rows.length, 2);
 });
@@ -161,4 +161,134 @@ test("obsolete scans yield and cannot overwrite a newer query cache", async () =
     ).matched,
     1,
   );
+});
+
+// These tests deliberately exercise the message payload, not just row counts.
+test("pages carry bounded previews and on-demand details retain source contents", async () => {
+  const long = "x".repeat(100000) + "needle" + "y".repeat(1000);
+  const engine = new DataEngine([
+    ["name", "note"],
+    ["Alice", long],
+  ]);
+  const page = await engine.query({ ...base, filter: "needle" });
+  assert.ok(page.rows[0].cells[1].includes("needle"));
+  assert.ok(page.rows[0].cells[1].length <= 240);
+  assert.equal(page.rows[0].lengths[1], long.length);
+  assert.ok(page.rows[0].offsets[1] > 0);
+  assert.equal(engine.detail(1, 1, ",", false), long);
+  assert.deepEqual(Papa.parse(engine.detail(1, null, "\t", false), { delimiter: "\t" }).data, [
+    ["Alice", long],
+  ]);
+});
+
+test("wide long-cell pages have a character budget and preserve source column identities", async () => {
+  const engine = new DataEngine(
+    Array.from({ length: 30 }, () => Array(100).fill("x".repeat(10000))),
+  );
+  const page = await engine.query(base);
+  assert.ok(page.rows.reduce((n, row) => n + row.cells.join("").length, 0) <= 200000);
+  const subset = await engine.query({ ...base, visibleColumns: [99, 2] });
+  assert.deepEqual(subset.columnIds, [99, 2]);
+  assert.equal(subset.rows[0].cells.length, 2);
+});
+
+test("narrowing search caches preserve semantics across deletion, scope and phrase changes", async () => {
+  const rows = [
+    ["one", "two"],
+    ["red fox", "blue"],
+    ["red", "fox"],
+    ["reddish", "blue"],
+    ["blue", "red fox"],
+    ["", ""],
+  ];
+  const engine = new DataEngine(rows);
+  const queries = [
+    { filter: "red" },
+    { filter: "red fox" },
+    { filter: "red fox", phrase: true },
+    { filter: "red" },
+    { filter: "red", searchColumn: 1 },
+    { filter: "", skipEmpty: false },
+    { filter: "blue", searchColumn: 0 },
+    { filter: "blue", searchColumn: null },
+  ];
+  for (const options of queries) {
+    const query = { ...base, ...options };
+    const actual = await engine.query(query);
+    const expected = await new DataEngine(rows).query(query);
+    assert.deepEqual(actual.rows, expected.rows);
+    assert.equal(actual.matched, expected.matched);
+  }
+});
+
+test("randomised exact numeric sorting agrees with the comparator in both directions", async () => {
+  let seed = 42;
+  const rows = [
+    ["value"],
+    ...Array.from({ length: 2000 }, (_, i) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return [
+        i % 17 === 0
+          ? ""
+          : i % 13 === 0
+            ? "text"
+            : `${i % 2 ? "-" : ""}${seed}000000000000000000.00${i % 9}`,
+      ];
+    }),
+  ];
+  const engine = new DataEngine(rows);
+  for (const direction of ["ascending", "descending"]) {
+    const sort = { key: 0, mode: "numeric", direction };
+    const expected = rows
+      .slice(1)
+      .map((_, i) => i + 1)
+      .sort((a, b) => compareCells(rows[a][0], rows[b][0], sort) || a - b);
+    const page = await engine.query({ ...base, sort, skipEmpty: false });
+    assert.deepEqual(
+      page.rows.map((row) => row.id),
+      expected.slice(0, page.pageSize),
+    );
+  }
+});
+
+test("sorting and long-cell searches yield and cancellation retains a usable dataset", async () => {
+  let seed = 42;
+  const engine = new DataEngine([
+    ["value"],
+    ...Array.from({ length: 80000 }, () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return [String(seed)];
+    }),
+  ]);
+  const initial = await engine.query(base);
+  let current = true;
+  const sorting = engine.query(
+    { ...base, sort: { key: 0, mode: "numeric", direction: "ascending" } },
+    () => current,
+  );
+  current = false;
+  assert.equal(await sorting, null);
+  assert.deepEqual((await engine.query(base)).rows, initial.rows);
+  const large = new DataEngine([
+    ["value"],
+    ...Array.from({ length: 40 }, () => ["x".repeat(1024 * 1024)]),
+  ]);
+  current = true;
+  const searching = large.query({ ...base, filter: "absent" }, () => current);
+  current = false;
+  assert.equal(await searching, null);
+  assert.equal((await large.query(base)).matched, 40);
+});
+
+test("Unicode folds keep contextual casing and map expanded offsets back to the source", async () => {
+  const sigma = new DataEngine([["value"], ["a".repeat(32768) + "Σa"]]);
+  assert.equal((await sigma.query({ ...base, filter: "ς" })).matched, 0);
+  assert.equal((await sigma.query({ ...base, filter: "σ" })).matched, 1);
+  for (const length of [20000, 40000]) {
+    const value = "İ".repeat(length) + "needle";
+    const page = await new DataEngine([["value"], [value]]).query({ ...base, filter: "needle" });
+    assert.equal(page.matched, 1);
+    assert.ok(page.rows[0].cells[0].includes("needle"));
+    assert.equal(page.rows[0].offsets[0], length - 24);
+  }
 });
