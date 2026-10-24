@@ -1,4 +1,4 @@
-import type { Delimiter, Query } from "./data.ts";
+import type { Delimiter, Query } from "./shared.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 type WorkerPort = Pick<

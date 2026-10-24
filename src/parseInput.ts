@@ -1,5 +1,5 @@
 import Papa from "papaparse";
-import type { Delimiter } from "./data.ts";
+import type { Delimiter } from "./shared.ts";
 
 const CHUNK_SIZE = 1024 * 1024;
 export const MAX_RECORD_CHARACTERS = 8 * 1024 * 1024;
@@ -52,7 +52,9 @@ export async function parseInput(
   let position = 0;
   let recordStart = 0;
   let boundary = 0;
-  let records = 0;
+  const samples: string[] = [];
+  let blankPrefix = 0;
+  let prefixRows: string[][] = [];
   let quoted = false;
   let first = true;
   let newline: "" | "\r" | "\n" | "\r\n" = "";
@@ -115,8 +117,31 @@ export async function parseInput(
             "Mixed record line endings. Export the file with consistent line endings and try again.",
           );
         special.lastIndex = index + ending.length;
+        if (!parser) {
+          const record = pending.slice(recordStart, index);
+          if (record.trim() && samples.length < 10) samples.push(record);
+          // Plain blank records have one field under every supported dialect.
+          // Consume their values now rather than retaining a growing prefix.
+          if (!samples.length && !record.includes("\t") && blankPrefix === recordStart) {
+            prefixRows.push([record]);
+            blankPrefix = special.lastIndex;
+            if (prefixRows.length === 4096) {
+              consume({
+                data: prefixRows,
+                errors: [],
+                meta: {
+                  delimiter: "",
+                  linebreak: newline,
+                  aborted: false,
+                  truncated: false,
+                  cursor: blankPrefix,
+                },
+              });
+              prefixRows = [];
+            }
+          }
+        }
         boundary = recordStart = special.lastIndex;
-        records++;
       }
     }
     position = pending.length;
@@ -126,8 +151,29 @@ export async function parseInput(
     pending += first ? chunk.text.replace(/^\ufeff/, "") : chunk.text;
     if (chunk.text.length) first = false;
     scan(false);
-    if (!parser && boundary && (records >= 10 || boundary >= 64 * 1024))
-      parser = initialise(pending.slice(0, boundary));
+    if (prefixRows.length) {
+      consume({
+        data: prefixRows,
+        errors: [],
+        meta: {
+          delimiter: "",
+          linebreak: newline,
+          aborted: false,
+          truncated: false,
+          cursor: blankPrefix,
+        },
+      });
+      prefixRows = [];
+    }
+    if (blankPrefix) {
+      pending = pending.slice(blankPrefix);
+      position -= blankPrefix;
+      recordStart -= blankPrefix;
+      boundary -= blankPrefix;
+      blankPrefix = 0;
+    }
+    if (!parser && boundary && samples.length && (samples.length >= 10 || boundary >= 64 * 1024))
+      parser = initialise(samples.join(newline));
     if (parser && boundary) {
       consume(parser.parse(pending.slice(0, boundary), 0, true) as Papa.ParseResult<string[]>);
       pending = pending.slice(boundary);
@@ -138,7 +184,22 @@ export async function parseInput(
     progress(chunk.fraction);
   }
   scan(true);
-  if (!parser) parser = initialise(pending);
+  if (!parser) parser = initialise([...samples, pending.slice(recordStart)].join(newline));
+  if (prefixRows.length) {
+    consume({
+      data: prefixRows,
+      errors: [],
+      meta: {
+        delimiter: detected,
+        linebreak: newline,
+        aborted: false,
+        truncated: false,
+        cursor: blankPrefix,
+      },
+    });
+    pending = pending.slice(blankPrefix);
+    boundary -= blankPrefix;
+  }
   // An empty remainder after a record separator does not add a phantom row.
   if (pending)
     consume(parser.parse(pending, 0, boundary === pending.length) as Papa.ParseResult<string[]>);

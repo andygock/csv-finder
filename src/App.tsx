@@ -3,16 +3,19 @@ import styles from "./App.module.css";
 import useSettings from "./hooks/useSettings";
 import useDataset from "./hooks/useDataset";
 import PasteBox from "./PasteBox";
-import SettingsDialog, { ImportOptions } from "./SettingsDialog";
+import SettingsDialog from "./SettingsDialog";
 import ResultsTable from "./ResultsTable";
+import ImportPreview from "./ImportPreview";
+import ValueDialog from "./ValueDialog";
+import QueryControls from "./QueryControls";
+import Pagination from "./Pagination";
 import { searchShortcut } from "./searchShortcut.ts";
-import { Button, Check, Dialog, Input, Select, Popover } from "./ui";
-import type { Delimiter, Query, SortConfig } from "./data.ts";
+import { Button } from "./ui";
+import type { Delimiter, Query, SortConfig } from "./shared.ts";
 
 const count = (value: number) => value.toLocaleString("en-AU");
 const dialectName = (value: string) =>
   ({ ",": "Comma", "\t": "Tab", ";": "Semicolon", "|": "Pipe" })[value] ?? value;
-const VALUE_PAGE = 32_768;
 
 function App() {
   const [settings, setSettings] = useSettings();
@@ -25,7 +28,6 @@ function App() {
   const [pageSize, setPageSize] = useState(50);
   const [searchColumn, setSearchColumn] = useState<number | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<number[] | undefined>();
-  const [columnFilter, setColumnFilter] = useState("");
   const [delimiter, setDelimiter] = useState<Delimiter>("");
   const [copyFormat, setCopyFormat] = useState<"," | "\t">("\t");
   const [simplifyNumbers, setSimplifyNumbers] = useState(true);
@@ -33,9 +35,8 @@ function App() {
   const [fileError, setFileError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paste, setPaste] = useState("");
-  const [goTo, setGoTo] = useState("");
-  const [notice, setNotice] = useState("");
-  const [valuePage, setValuePage] = useState(0);
+  const [detailOffset, setDetailOffset] = useState(0);
+  const [spreadsheet, setSpreadsheet] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const query = useMemo(
@@ -79,7 +80,6 @@ function App() {
     () => visibleColumns ?? headings.map((_, i) => i),
     [visibleColumns, headings],
   );
-  const pages = page ? Math.max(1, Math.ceil(page.matched / page.pageSize)) : 1;
 
   const setHeaders = useCallback(
     (headers: boolean) => {
@@ -95,8 +95,6 @@ function App() {
     setPageIndex(0);
     setSearchColumn(null);
     setVisibleColumns(undefined);
-    setColumnFilter("");
-    setGoTo("");
     setFileError("");
   }, []);
   const load = useCallback(
@@ -134,17 +132,31 @@ function App() {
   );
   const handleInspect = useCallback(
     (row: number, column: number | null, offset = 0) => {
-      setNotice("");
-      setValuePage(Math.floor(offset / VALUE_PAGE));
-      inspect(row, column, copyFormat, simplifyNumbers);
+      setDetailOffset(offset);
+      inspect(row, column, copyFormat, simplifyNumbers, spreadsheet);
     },
-    [inspect, copyFormat, simplifyNumbers],
+    [inspect, copyFormat, simplifyNumbers, spreadsheet],
   );
+  const updateQuery = useCallback((patch: Partial<Query>) => {
+    if (patch.filter !== undefined) setFilter(patch.filter);
+    if (patch.phrase !== undefined) setPhrase(patch.phrase);
+    if (patch.skipEmpty !== undefined) setSkipEmpty(patch.skipEmpty);
+    if ("searchColumn" in patch) setSearchColumn(patch.searchColumn ?? null);
+    if ("visibleColumns" in patch) setVisibleColumns(patch.visibleColumns);
+    setPageIndex(0);
+  }, []);
+  const updateSortMode = useCallback((mode: "text" | "numeric") => {
+    setSortMode(mode);
+    setSort((current) => (current ? { ...current, mode } : null));
+    setPageIndex(0);
+  }, []);
   const restoreQuery = (previous: Query) => {
     setFilter(previous.filter);
     setPhrase(previous.phrase);
     setSkipEmpty(previous.skipEmpty);
-    setSettings((current) => ({ ...current, headers: previous.headers }));
+    setSettings((current) =>
+      current.headers === previous.headers ? current : { ...current, headers: previous.headers },
+    );
     setSort(previous.sort);
     if (previous.sort) setSortMode(previous.sort.mode);
     setPageIndex(previous.page);
@@ -156,11 +168,6 @@ function App() {
   useEffect(() => {
     if (dataset.loaded) inputRef.current?.focus();
   }, [dataset.loaded]);
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(""), 2500);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!dataset.loaded) return;
@@ -232,15 +239,6 @@ function App() {
   }, [loadFile]);
 
   const preview = dataset.info?.preview;
-  const columnMatches = useMemo(
-    () =>
-      headings
-        .map((heading, id) => ({ heading, id }))
-        .filter((item) => item.heading.toLowerCase().includes(columnFilter.toLowerCase())),
-    [headings, columnFilter],
-  );
-  const detail = dataset.detail;
-  const detailPages = Math.max(1, Math.ceil((detail?.value?.length ?? 0) / VALUE_PAGE));
   return (
     <main className={styles.app}>
       <header className={styles.header}>
@@ -310,59 +308,20 @@ function App() {
         </p>
       )}
       {!dataset.loaded && !dataset.loading && dataset.info && preview && (
-        <section className={styles.importPreview} aria-label="Import preview">
-          <div className={styles.bar}>
-            <strong>Import preview</strong>
-            <span className={styles.muted}>
-              First {preview.rows.length} records · up to 8 columns
-            </span>
-          </div>
-          <div className={styles.previewScroll}>
-            <table className={styles.table}>
-              <tbody>
-                {preview.rows.map((row, index) => (
-                  <tr
-                    key={row.id}
-                    className={settings.headers && index === 0 ? styles.previewHeader : undefined}
-                  >
-                    <th scope="row">{row.id + 1}</th>
-                    {row.cells.map((cell, column) => (
-                      <td key={column}>
-                        {cell || "\u00a0"}
-                        {cell.length < row.lengths[column] && "…"}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className={styles.bar}>
-            <ImportOptions
-              delimiter={delimiter}
-              setDelimiter={setDelimiter}
-              headers={settings.headers}
-              setHeaders={setHeaders}
-            />
-            <Button onClick={() => void dataset.retry(delimiter)}>Reparse</Button>
-            <Button
-              variant="primary"
-              disabled={delimiter !== dataset.importDelimiter}
-              onClick={() => {
-                dataset.confirm();
-                setPaste("");
-              }}
-            >
-              Use data
-            </Button>
-            <Button variant="ghost" onClick={dataset.cancelImport}>
-              Back
-            </Button>
-            {delimiter !== dataset.importDelimiter && (
-              <span className={styles.muted}>Reparse to apply the delimiter.</span>
-            )}
-          </div>
-        </section>
+        <ImportPreview
+          info={dataset.info}
+          delimiter={delimiter}
+          importDelimiter={dataset.importDelimiter}
+          headers={settings.headers}
+          onHeaders={setHeaders}
+          onDelimiter={setDelimiter}
+          onReparse={() => void dataset.retry(delimiter)}
+          onBack={dataset.cancelImport}
+          onConfirm={() => {
+            dataset.confirm();
+            setPaste("");
+          }}
+        />
       )}
       {!dataset.loaded && !dataset.info && (
         <>
@@ -381,132 +340,22 @@ function App() {
       )}
       {dataset.loaded && (
         <>
-          <div className={styles.searchBar}>
-            <Input
-              ref={inputRef}
-              type="search"
-              aria-label="Filter results"
-              placeholder="Search records…"
-              value={filter}
-              maxLength={2000}
-              onChange={(event) => {
-                setFilter(event.target.value);
-                setPageIndex(0);
-              }}
-            />
-            <Select
-              aria-label="Search column"
-              value={searchColumn ?? "all"}
-              onChange={(event) => {
-                setSearchColumn(event.target.value === "all" ? null : Number(event.target.value));
-                setPageIndex(0);
-              }}
-            >
-              <option value="all">All columns</option>
-              {headings.map((heading, id) => (
-                <option key={id} value={id}>
-                  {id + 1}. {heading}
-                </option>
-              ))}
-            </Select>
-            <Popover title={`Columns · ${shown.length}`}>
-              <Input
-                aria-label="Find a column"
-                placeholder="Find column…"
-                value={columnFilter}
-                onChange={(event) => setColumnFilter(event.target.value)}
-              />
-              <Button
-                onClick={() => {
-                  setVisibleColumns(undefined);
-                  setPageIndex(0);
-                }}
-              >
-                Show all columns
-              </Button>
-              <div className={styles.columnList}>
-                {columnMatches.slice(0, 100).map(({ heading, id }) => (
-                  <Check
-                    key={id}
-                    checked={shown.includes(id)}
-                    disabled={shown.length === 1 && shown[0] === id}
-                    onChange={(event) => {
-                      setVisibleColumns(
-                        event.target.checked
-                          ? [...shown, id].sort((a, b) => a - b)
-                          : shown.filter((value) => value !== id),
-                      );
-                      setPageIndex(0);
-                    }}
-                  >
-                    {id + 1}. {heading}
-                  </Check>
-                ))}
-              </div>
-              {columnMatches.length > 100 && (
-                <p className={styles.muted}>
-                  Search to narrow {count(columnMatches.length)} columns.
-                </p>
-              )}
-            </Popover>
-            <Popover title="Options">
-              <Check
-                checked={settings.headers}
-                onChange={(event) => setHeaders(event.target.checked)}
-              >
-                First record is header
-              </Check>
-              <Check
-                checked={phrase}
-                onChange={(event) => {
-                  setPhrase(event.target.checked);
-                  setPageIndex(0);
-                }}
-              >
-                Match phrase
-              </Check>
-              <Check
-                checked={skipEmpty}
-                onChange={(event) => {
-                  setSkipEmpty(event.target.checked);
-                  setPageIndex(0);
-                }}
-              >
-                Hide empty records
-              </Check>
-              <label>
-                Sort as{" "}
-                <Select
-                  value={sortMode}
-                  onChange={(event) => {
-                    const mode = event.target.value as "text" | "numeric";
-                    setSortMode(mode);
-                    setSort((current) => (current ? { ...current, mode } : null));
-                    setPageIndex(0);
-                  }}
-                >
-                  <option value="text">Text</option>
-                  <option value="numeric">Numbers</option>
-                </Select>
-              </label>
-              <label>
-                Copy row as{" "}
-                <Select
-                  value={copyFormat}
-                  onChange={(event) => setCopyFormat(event.target.value as "," | "\t")}
-                >
-                  <option value={"\t"}>TSV</option>
-                  <option value=",">CSV</option>
-                </Select>
-              </label>
-              <Check
-                checked={simplifyNumbers}
-                onChange={(event) => setSimplifyNumbers(event.target.checked)}
-              >
-                Copy unformatted numbers
-              </Check>
-            </Popover>
-          </div>
+          <QueryControls
+            query={query}
+            headings={headings}
+            shown={shown}
+            searchRef={inputRef}
+            sortMode={sortMode}
+            copyFormat={copyFormat}
+            simplifyNumbers={simplifyNumbers}
+            spreadsheet={spreadsheet}
+            onChange={updateQuery}
+            onHeaders={setHeaders}
+            onCopyFormat={setCopyFormat}
+            onSimplifyNumbers={setSimplifyNumbers}
+            onSpreadsheet={setSpreadsheet}
+            onSortMode={updateSortMode}
+          />
           <div className={styles.bar}>
             <span role="status">
               {stale
@@ -549,85 +398,17 @@ function App() {
                   </p>
                 )}
               </div>
-              <nav className={styles.pagination} aria-label="Result pages">
-                <label>
-                  Rows{" "}
-                  <Select
-                    value={pageSize}
-                    onChange={(event) => {
-                      setPageSize(Number(event.target.value));
-                      setPageIndex(0);
-                    }}
-                  >
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </Select>
-                </label>
-                {page.pageSize < pageSize && (
-                  <span className={styles.muted}>
-                    {page.pageSize} per page for {shown.length} columns
-                  </span>
-                )}
-                <div className={styles.actions}>
-                  <Button
-                    disabled={stale || page.page === 0}
-                    onClick={() => setPageIndex(0)}
-                    aria-label="First page"
-                  >
-                    «
-                  </Button>
-                  <Button
-                    disabled={stale || page.page === 0}
-                    onClick={() => setPageIndex(page.page - 1)}
-                    aria-label="Previous page"
-                  >
-                    ‹
-                  </Button>
-                  <span>
-                    {count(page.page + 1)} / {count(pages)}
-                  </span>
-                  <Button
-                    disabled={stale || page.page + 1 >= pages}
-                    onClick={() => setPageIndex(page.page + 1)}
-                    aria-label="Next page"
-                  >
-                    ›
-                  </Button>
-                  <Button
-                    disabled={stale || page.page + 1 >= pages}
-                    onClick={() => setPageIndex(pages - 1)}
-                    aria-label="Last page"
-                  >
-                    »
-                  </Button>
-                  <form
-                    className={styles.goTo}
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const number = Number(goTo);
-                      if (Number.isInteger(number) && number >= 1 && number <= pages) {
-                        setPageIndex(number - 1);
-                        setGoTo("");
-                      }
-                    }}
-                  >
-                    <Input
-                      aria-label="Go to page"
-                      placeholder="Page"
-                      inputMode="numeric"
-                      type="number"
-                      min={1}
-                      max={pages}
-                      value={goTo}
-                      onChange={(event) => setGoTo(event.target.value)}
-                    />
-                    <Button type="submit" disabled={stale || !goTo}>
-                      Go
-                    </Button>
-                  </form>
-                </div>
-              </nav>
+              <Pagination
+                page={page}
+                requestedPageSize={pageSize}
+                shownCount={shown.length}
+                stale={stale}
+                onPage={setPageIndex}
+                onPageSize={(size) => {
+                  setPageSize(size);
+                  setPageIndex(0);
+                }}
+              />
             </>
           )}
         </>
@@ -645,73 +426,12 @@ function App() {
         headers={settings.headers}
         setHeaders={setHeaders}
       />
-      <Dialog
-        open={!!detail}
+      <ValueDialog
+        detail={dataset.detail}
+        headings={headings}
+        offset={detailOffset}
         onClose={dataset.closeDetail}
-        title={
-          detail
-            ? `Record ${detail.row + 1}${detail.column === null ? " · full row" : ` · ${headings[detail.column]}`}`
-            : "Value"
-        }
-        wide
-      >
-        {detail?.error ? (
-          <p role="alert">{detail.error}</p>
-        ) : detail?.value === null ? (
-          <p role="status">Reading full value…</p>
-        ) : (
-          <>
-            <textarea
-              className={styles.value}
-              readOnly
-              aria-label="Full value, current section"
-              value={
-                detail?.value?.slice(valuePage * VALUE_PAGE, (valuePage + 1) * VALUE_PAGE) ?? ""
-              }
-            />
-            <div className={styles.bar}>
-              <span className={styles.muted}>
-                {count(detail?.value?.length ?? 0)} characters
-                {detailPages > 1 ? ` · section ${valuePage + 1} / ${detailPages}` : ""}
-              </span>
-              {detailPages > 1 && (
-                <>
-                  <Button
-                    disabled={valuePage === 0}
-                    onClick={() => setValuePage((value) => value - 1)}
-                  >
-                    Previous section
-                  </Button>
-                  <Button
-                    disabled={valuePage + 1 === detailPages}
-                    onClick={() => setValuePage((value) => value + 1)}
-                  >
-                    Next section
-                  </Button>
-                </>
-              )}
-              <Button
-                variant="primary"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(detail?.copyValue ?? detail?.value ?? "");
-                    setNotice("Copied full value.");
-                  } catch {
-                    setNotice("Clipboard unavailable. Select text in the viewer to copy manually.");
-                  }
-                }}
-              >
-                {detail?.copyValue !== undefined
-                  ? "Copy unformatted number"
-                  : `Copy full ${detail?.column === null ? "row" : "value"}`}
-              </Button>
-            </div>
-          </>
-        )}
-        <p role="status" className={styles.muted}>
-          {notice}
-        </p>
-      </Dialog>
+      />
     </main>
   );
 }

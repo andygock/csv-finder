@@ -1,53 +1,9 @@
 import Papa from "papaparse";
 
-export type Delimiter = "" | "," | "\t" | ";" | "|";
-export type SortConfig = {
-  key: number;
-  direction: "ascending" | "descending";
-  mode: "text" | "numeric";
-};
-export type Query = {
-  filter: string;
-  phrase: boolean;
-  headers: boolean;
-  skipEmpty: boolean;
-  sort: SortConfig | null;
-  page: number;
-  pageSize: number;
-  searchColumn?: number | null;
-  visibleColumns?: number[];
-};
-export type Page = {
-  rows: { id: number; cells: string[]; lengths: number[]; offsets: number[] }[];
-  headings: string[];
-  columnIds: number[];
-  loaded: number;
-  matched: number;
-  page: number;
-  pageSize: number;
-  query: Query;
-};
-
-// Guardrails, not a promise that every device can hold this much data. Only the
-// worker retains the dataset; the UI receives a bounded page of original cells.
-export const MAX_FILE_BYTES = 256 * 1024 * 1024;
-export const MAX_CELLS = 5_000_000;
-export const MAX_COLUMNS = 1_000;
-
-export function searchTokens(value: string, phrase: boolean): string[] {
-  const trimmed = value.trim().toLowerCase();
-  return trimmed ? [...new Set(phrase ? [trimmed] : trimmed.split(/\s+/))] : [];
-}
-
-export function highlightPattern(value: string, phrase: boolean): RegExp | null {
-  const tokens = searchTokens(value, phrase).sort((a, b) => b.length - a.length);
-  return tokens.length
-    ? new RegExp(
-        `(${tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-        "gi",
-      )
-    : null;
-}
+import { searchTokens } from "./shared.ts";
+import type { Page, Query, SortConfig } from "./shared.ts";
+export * from "./shared.ts";
+import { NumericIndex } from "./numericIndex.ts";
 
 // Recognise Australian-style decimal/grouping syntax before removing formatting.
 // Work with strings so copying long identifiers or decimals never loses precision.
@@ -61,8 +17,14 @@ export function copyDelimiter(value: string): "," | "\t" {
   return value === "," ? "," : "\t";
 }
 
-export function serialiseRow(row: string[], delimiter: "," | "\t"): string {
-  return Papa.unparse([row], { delimiter, quotes: true });
+export function serialiseRow(row: string[], delimiter: "," | "\t", spreadsheet = false): string {
+  return Papa.unparse([row], { delimiter, quotes: true, escapeFormulae: spreadsheet });
+}
+
+function trimTrailingZeroes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 48) end--;
+  return value.slice(0, end);
 }
 
 function numericValue(
@@ -75,7 +37,7 @@ function numericValue(
   return {
     negative: normal.startsWith("-") && (digits !== "0" || /[1-9]/.test(fraction)),
     integer: digits,
-    fraction: fraction.replace(/0+$/, ""),
+    fraction: trimTrailingZeroes(fraction),
   };
 }
 
@@ -85,13 +47,15 @@ function compareNumbers(
 ): number {
   // Compare decimal strings exactly, including integers beyond Number.MAX_SAFE_INTEGER.
   if (a.negative !== b.negative) return a.negative ? -1 : 1;
-  const width = Math.max(a.fraction.length, b.fraction.length);
-  const x = a.fraction.padEnd(width, "0");
-  const y = b.fraction.padEnd(width, "0");
-  const order =
+  let order =
     a.integer.length - b.integer.length ||
-    (a.integer < b.integer ? -1 : a.integer > b.integer ? 1 : 0) ||
-    (x < y ? -1 : x > y ? 1 : 0);
+    (a.integer < b.integer ? -1 : a.integer > b.integer ? 1 : 0);
+  if (!order) {
+    for (let i = 0; i < Math.max(a.fraction.length, b.fraction.length); i++) {
+      order = (a.fraction.charCodeAt(i) || 48) - (b.fraction.charCodeAt(i) || 48);
+      if (order) break;
+    }
+  }
   return a.negative ? -order : order;
 }
 
@@ -138,9 +102,6 @@ export function yieldToMessages(): Promise<void> {
 export type QueryProgress = (phase: "Searching" | "Sorting", fraction: number) => void;
 const PREVIEW_CHARACTERS = 240;
 export const MAX_PAGE_CHARACTERS = 200_000;
-const NUMERIC_CACHE_CHARACTERS = 32 * 1024 * 1024;
-
-type Numeric = ReturnType<typeof numericValue>;
 
 function unicodeFold(value: string): string | null {
   // Unicode lowercase can depend on surrounding letters (Greek sigma) or
@@ -165,14 +126,14 @@ export class DataEngine {
     column: number | null;
   } | null = null;
   private numericColumn = -1;
-  private numericKeys: Map<number, Numeric> = new Map();
+  private numericKeys: NumericIndex | null = null;
   private previewKey = "";
   private previewPage: Page | null = null;
   readonly columns: number;
 
-  constructor(data: string[][], blank?: Uint8Array) {
+  constructor(data: string[][], blank?: Uint8Array, columns?: number) {
     this.data = data;
-    this.columns = data.reduce((max, row) => Math.max(max, row.length), 0);
+    this.columns = columns ?? data.reduce((max, row) => Math.max(max, row.length), 0);
     this.blank = blank ?? Uint8Array.from(data, (row) => Number(row.every((cell) => !cell.trim())));
   }
 
@@ -182,14 +143,40 @@ export class DataEngine {
     );
   }
 
-  detail(row: number, column: number | null, delimiter: "," | "\t", simplify: boolean): string {
+  async importPreview(): Promise<Page> {
+    const preview = await new DataEngine(
+      this.data
+        .slice(0, 5)
+        .map((row) => Array.from({ length: Math.min(this.columns, 8) }, (_, i) => row[i] ?? "")),
+      this.blank.subarray(0, 5),
+    ).query({
+      filter: "",
+      phrase: false,
+      headers: false,
+      skipEmpty: false,
+      sort: null,
+      page: 0,
+      pageSize: 5,
+      visibleColumns: Array.from({ length: Math.min(this.columns, 8) }, (_, i) => i),
+    });
+    return { ...preview!, loaded: this.data.length, matched: this.data.length };
+  }
+
+  detail(
+    row: number,
+    column: number | null,
+    delimiter: "," | "\t",
+    simplify: boolean,
+    spreadsheet = false,
+  ): string {
     const cells = this.data[row];
     if (!cells || !Number.isInteger(row)) throw new Error("This record is no longer available.");
-    if (column === null) return serialiseRow(cells, delimiter);
+    if (column === null) return serialiseRow(cells, delimiter, spreadsheet);
     if (!Number.isInteger(column) || column < 0 || column >= this.columns)
       throw new Error("Unknown column.");
     const value = cells[column] ?? "";
-    return simplify ? unformatNumber(value) : value;
+    const copied = simplify ? unformatNumber(value) : value;
+    return spreadsheet && /^[=+\-@\t\r]/.test(copied) ? "'" + copied : copied;
   }
 
   async query(
@@ -233,20 +220,15 @@ export class DataEngine {
       if (query.sort) {
         const sort = query.sort;
         const checkInterval = longestSortCell > 32_768 ? 1 : 128;
-        const keys =
-          this.numericColumn === sort.key ? this.numericKeys : new Map<number, Numeric>();
-        if (sort.mode === "numeric" && this.numericColumn !== sort.key) {
-          let remaining = NUMERIC_CACHE_CHARACTERS;
-          for (let i = 0; i < order.length; i++) {
-            const id = order[i];
-            const value = this.data[id][sort.key] ?? "";
-            // Bound both string storage and per-key object overhead. Values
-            // outside the cache retain the exact comparator fallback.
-            const cost = value.length * 2 + 128;
-            if (cost <= remaining) {
-              keys.set(id, numericValue(value));
-              remaining -= cost;
-            }
+        let keys = this.numericColumn === sort.key ? this.numericKeys : null;
+        if (sort.mode === "numeric" && !keys) {
+          // Release the old column before building its replacement. Compact source
+          // offsets classify every row once without a cache-size fallback cliff.
+          this.numericKeys = null;
+          this.numericColumn = -1;
+          keys = new NumericIndex(this.data, sort.key);
+          for (let i = 0; i < this.data.length; i++) {
+            keys.add(i);
             if (
               i % checkInterval === 0 &&
               performance.now() > deadline &&
@@ -255,20 +237,11 @@ export class DataEngine {
               return null;
           }
         }
-        const compare = (a: number, b: number) => {
-          if (sort.mode !== "numeric" || !keys.has(a) || !keys.has(b))
-            return (
-              compareCells(this.data[a][sort.key] ?? "", this.data[b][sort.key] ?? "", sort) ||
-              a - b
-            );
-          const x = keys.get(a)!;
-          const y = keys.get(b)!;
-          if (x !== null && y !== null)
-            return (sort.direction === "ascending" ? 1 : -1) * compareNumbers(x, y) || a - b;
-          return (
-            compareCells(this.data[a][sort.key] ?? "", this.data[b][sort.key] ?? "", sort) || a - b
-          );
-        };
+        const compare = (a: number, b: number) =>
+          (sort.mode === "numeric" && keys
+            ? keys.compare(a, b, sort.direction)
+            : compareCells(this.data[a][sort.key] ?? "", this.data[b][sort.key] ?? "", sort)) ||
+          a - b;
         // Preserve the linear fast path for already ordered exports. The
         // comparator includes source IDs, so reversing never reverses ties.
         let ascending = true,
@@ -323,7 +296,7 @@ export class DataEngine {
           this.numericKeys = keys;
         } else {
           this.numericColumn = -1;
-          this.numericKeys = new Map();
+          this.numericKeys = null;
         }
       }
     }
@@ -332,7 +305,9 @@ export class DataEngine {
     const column = query.searchColumn ?? null;
     const matchKey = JSON.stringify([sortKey, tokens, query.skipEmpty, column]);
     let matches = this.matches;
-    if (matchKey !== this.matchKey) {
+    if (matchKey !== this.matchKey && !tokens.length && !query.skipEmpty) {
+      matches = order;
+    } else if (matchKey !== this.matchKey) {
       // Reuse a result only if every old predicate is implied by the new one.
       // Backspacing, changing columns, or showing blanks forces a full scan.
       const previous = this.previous;
@@ -408,7 +383,7 @@ export class DataEngine {
         )
           return null;
       }
-      matches = buffer.slice(0, count);
+      matches = count === buffer.length ? buffer : buffer.slice(0, count);
     }
     if (!isCurrent()) return null;
     const columnIds = query.visibleColumns
@@ -434,7 +409,7 @@ export class DataEngine {
     );
     const headings = this.headings(query.headers);
     const rows: Page["rows"] = [];
-    for (const id of matches.slice(page * pageSize, (page + 1) * pageSize)) {
+    for (const id of matches.subarray(page * pageSize, (page + 1) * pageSize)) {
       const cells: string[] = [],
         lengths: number[] = [],
         offsets: number[] = [];

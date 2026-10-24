@@ -61,8 +61,14 @@ scope.onmessage = async ({ data: request }) => {
         if (!engine) throw new Error("Load a dataset first.");
         const value = engine.detail(request.row, request.column, request.delimiter, false);
         const copyValue =
-          request.simplify && request.column !== null
-            ? engine.detail(request.row, request.column, request.delimiter, true)
+          request.spreadsheet || (request.simplify && request.column !== null)
+            ? engine.detail(
+                request.row,
+                request.column,
+                request.delimiter,
+                request.simplify,
+                request.spreadsheet,
+              )
             : value;
         send({
           type: "detail",
@@ -93,6 +99,7 @@ scope.onmessage = async ({ data: request }) => {
     // JS number array during import. Flatten once after the final record.
     const blanks: Uint8Array[] = [];
     const FLAG_BLOCK = 65_536;
+    let columns = 0;
     let cells = 0,
       nonempty = 0,
       lastProgress = 0;
@@ -106,6 +113,7 @@ scope.onmessage = async ({ data: request }) => {
         if (problem) throw new Error(problem);
         detectedWarning ||= result.errors.some((error) => error.code === "UndetectableDelimiter");
         for (const row of result.data) {
+          columns = Math.max(columns, row.length);
           cells += row.length;
           if (cells > MAX_CELLS || row.length > MAX_COLUMNS)
             throw new Error(
@@ -134,18 +142,9 @@ scope.onmessage = async ({ data: request }) => {
         index * FLAG_BLOCK,
       ),
     );
-    engine = new DataEngine(rows, flags);
+    engine = new DataEngine(rows, flags, columns);
     await yieldToMessages();
-    const preview = await engine.query({
-      filter: "",
-      phrase: false,
-      headers: false,
-      skipEmpty: false,
-      sort: null,
-      page: 0,
-      pageSize: 5,
-      visibleColumns: Array.from({ length: Math.min(engine.columns, 8) }, (_, i) => i),
-    });
+    const preview = await engine.importPreview();
     const warning = [
       detectedWarning
         ? "Delimiter could not be detected; comma was used. Check the preview or choose a delimiter."

@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef } from "react";
 import type { KeyboardEvent } from "react";
-import { highlightPattern } from "./data.ts";
-import type { Page } from "./data.ts";
+import { highlightPattern } from "./shared.ts";
+import type { Page } from "./shared.ts";
 import styles from "./App.module.css";
 
 interface Props {

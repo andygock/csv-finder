@@ -7,6 +7,9 @@ const scenarios = [
   ["narrow", 100_000, 5],
   ["wide", 30_000, 100],
   ["random", 200_000, 5],
+  ["cache-overflow", 500_000, 3],
+  ["mixed", 350_000, 3],
+  ["zero-run", 256, 2],
   ["duplicates", 100_000, 5],
   ["long-decimal", 50_000, 3],
   ["multiline", 100_000, 10],
@@ -32,7 +35,10 @@ for (const [shape, count, columns] of scenarios) {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
       return Array.from({ length: columns }, (_, column) => {
         if (column === 0) {
-          if (shape === "random") return String(seed);
+          if (shape === "random" || shape === "cache-overflow") return String(seed);
+          if (shape === "mixed")
+            return row % 5 === 0 ? "" : row % 7 === 0 ? `text-${seed}` : String(seed);
+          if (shape === "zero-run") return "0." + "0".repeat(40_000 + (row % 11)) + "1";
           if (shape === "duplicates") return String(seed % 100);
           if (shape === "long-decimal") return `${seed}00000000000000000.000000000000000${row % 9}`;
           return String(count - row);
@@ -71,7 +77,7 @@ for (const [shape, count, columns] of scenarios) {
     const sort = await query(sorted);
     const next = await query({ ...sorted, page: 1 });
     let cancelMs = null;
-    if (shape === "random") {
+    if (["random", "cache-overflow", "mixed", "zero-run"].includes(shape)) {
       const sortingId = ++id;
       const progress = receive(worker, "queryProgress", sortingId);
       worker.postMessage({

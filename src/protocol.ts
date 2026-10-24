@@ -1,4 +1,4 @@
-import type { Delimiter, Page, Query } from "./data.ts";
+import type { Delimiter, Page, Query } from "./shared.ts";
 
 export type ImportInfo = {
   rows: number;
@@ -18,6 +18,7 @@ export type WorkerRequest =
       column: number | null;
       delimiter: "," | "\t";
       simplify: boolean;
+      spreadsheet?: boolean;
     };
 export type WorkerResponse =
   | { type: "progress"; rows: number; fraction: number }

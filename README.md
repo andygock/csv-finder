@@ -10,14 +10,14 @@ Open, search and copy CSV or TSV data entirely within your browser. File content
 
 **Settings** also exposes the import delimiter and header preference. Delimiter changes apply to the next import/reparse. Both header controls consistently reset sorting and pagination. The header preference is saved locally; unavailable or full settings storage does not stop the app.
 
-Import progress reports parsed records and the fraction of the source read. **Cancel import** stops the worker. Failed or cancelled pastes retain their input. **Retry import** reparses the retained source; after a failed replacement, **Reopen previous file** reloads the last accepted file from its retained File handle. Only one parsed dataset is held at a time. Recovery does not survive closing the page. **Clear** releases the source/recovery references, pasted input and worker.
+Import progress reports parsed records and the fraction of the source read. **Cancel import** stops the worker. Failed or cancelled pastes retain their editable input. A paste is encoded once as an immutable File; retries reuse it, and accepting the preview releases the editable text while retaining the File until Clear or replacement. **Retry import** reparses the retained source; after a failed replacement, **Reopen previous file** reloads the last accepted file from its retained File handle. Only one parsed dataset is held at a time. Recovery does not survive closing the page. **Clear** releases the source/recovery references, pasted input and worker.
 
 Single-column data loads with a delimiter warning. Unequal row widths are accepted with a warning and missing cells appear blank. Malformed quoting, invalid UTF-8 and inconsistent record line endings report errors. Different line endings inside quoted fields are preserved. Dialect detection uses complete records and ignores blanks for detection only, preserving blank source records in the dataset. A final record separator does not create an extra phantom record.
 
 ## Search, sort and navigate
 
 - Search across all columns, or choose a specific column. Space-separated tokens must all match, but may match different cells. **Match phrase** in Options searches for a contiguous substring within a cell. Search is case-insensitive and punctuation is literal.
-- Choose **Columns** to find and hide columns; at least one remains visible. Column visibility does not change the search scope. Record numbers and column identities remain tied to the source.
+- Choose **Columns** to find columns by name or source number, page through matches and hide columns; at least one remains visible. Column visibility does not change the search scope. Record numbers and column identities remain tied to the source.
 - Select a heading to sort ascending/descending. **Sort as** in Options selects text or numeric ordering. Numeric sorting recognises signed decimal numbers, dollar signs and comma thousands separators without rounding long integers or decimals. Numbers precede nonnumeric text and blanks/missing values sort last in both directions. Equal values retain source order. **Original order** restores source order.
 - **Hide empty records** in Options hides or restores whitespace-only records. The header is always the first source record, even when blank.
 - Use the first/previous/next/last buttons or **Go to page**. Page size adapts to the visible column count to keep the table bounded.
@@ -29,15 +29,15 @@ Record numbers count parsed source records, including the header and hidden blan
 
 Select a cell to open its original full value, or a record number to open the entire row serialised as CSV/TSV. Table previews show context around a match even when it occurs deep inside a large field. Long values are displayed in 32,768-character sections in the viewer, opening near the selected match. **Copy full value/row** copies the entire value, not just the visible section.
 
-**Copy unformatted numbers** changes only the copied numeric cell; the viewer still displays the original text. Ordinary text and full-row copies retain their original values. Row serialisation runs in the worker and quotes/escapes embedded delimiters, quotes and newlines. Clipboard failures display a message and allow manual selection of the current section.
+**Copy unformatted numbers** changes only the copied numeric cell; the viewer still displays the original text. Ordinary text and full-row copies retain their original values by default. **Copy for spreadsheet (escape formulae)** explicitly prefixes values beginning with `=`, `+`, `-`, `@`, tab or carriage return with an apostrophe, for both cells and serialised rows. This changes the copied value; the viewer still shows the original. Row serialisation runs in the worker and quotes/escapes embedded delimiters, quotes and newlines. Clipboard failures display a message and allow manual selection of the current section.
 
-The table has one tab stop. Arrow keys move between headings, record actions and cells; Home/End move to the start/end of the row. Enter/Space activate the focused action. Ctrl+Enter (Command+Enter on Mac) previews pasted data. Typing outside controls starts a search, and Escape clears it. Dialogs retain focus and Escape behaviour; option popovers close on Escape or an outside click.
+The table has one tab stop. Arrow keys move between headings, record actions and cells; Home/End move to the start/end of the row. Enter/Space activate the focused action. Ctrl+Enter (Command+Enter on Mac) previews pasted data. Typing an ASCII letter or digit outside controls starts a search, and Escape clears it. Dialogs retain focus and Escape behaviour; option popovers close on Escape or an outside click.
 
 ## Large files and limits
 
 A persistent Web Worker owns the parsed strings and performs parsing, searching, sorting and row serialisation. Every import gets a fresh worker, and source identity plus query IDs reject stale messages. A single query drain loop coalesces requests without allowing multiple temporary scans to accumulate.
 
-Files are decoded in 1 MiB byte chunks. An incremental boundary scanner preserves UTF-8/CRLF/quoted-record boundaries, checks record lengths, and supplies complete records to Papa Parse. Numeric sort keys have an estimated 32 MiB cache budget; row order and matching IDs use compact typed arrays, and blank flags are computed once during import.
+Files are decoded in 1 MiB byte chunks. An incremental boundary scanner preserves UTF-8/CRLF/quoted-record boundaries, checks record lengths, and supplies complete records to Papa Parse. Numeric sorting classifies every row once per cached column using source offsets in typed arrays (20 bytes per row, approximately 95 MiB at the five-million-cell limit for a one-column file). It retains no normalised numeric strings and does not fall back to reparsing rows beyond a cache threshold. Only one numeric column index is retained. Row order and matching IDs use compact typed arrays, and blank flags and maximum column count are computed during import. Unfiltered queries can share the order index, and the five-record import preview does not allocate dataset-sized query indexes.
 
 Sorting uses a stable merge sort that yields during merges, with linear paths for already ordered inputs. Searches check elapsed time and character work, including within long cells. The target work slice is 8 ms, but individual string operations, allocation and garbage collection can exceed it. Query invalidation is sent immediately, before the replacement search debounce. A narrower search reuses previous matches only when its predicates imply the previous query; deleting text or changing scope correctly triggers a broader scan.
 
@@ -45,9 +45,13 @@ Only bounded previews cross the worker boundary for ordinary pages: at most 2,00
 
 Guardrails reject imports above 256 MiB, 5 million cells, 1,000 columns or 8,388,608 raw characters per record, including completed records. These are protective limits, not certified capacities. Parsed strings, indexes, transient buffers and one requested full value still consume memory; low-memory devices can fail below these limits. Split larger files before importing. There is no IndexedDB, OPFS or disk-backed dataset storage.
 
+## Browser support
+
+The intended baseline is a current stable Chrome, Edge, Firefox or Safari with module Web Workers, `TextDecoder`, native modal dialogs and dynamic viewport units. Older browsers are not polyfilled or certified. Serve the production `dist` directory over HTTPS (localhost is suitable for development); clipboard writes require a secure context and permission from the browser. If clipboard access is denied, the viewer supports manual selection. Do not serve sensitive local files through an exposed development server.
+
 ## Development
 
-Use Node.js 22.18 or newer and pnpm. Respect configured pnpm minimum release age rules when installing or updating packages.
+Use Node.js 22.18 or newer and pnpm 12.3.4 (pinned in `package.json`). `pnpm-workspace.yaml` enforces a seven-day minimum release age and explicitly allows the SWC and esbuild installation scripts. Do not bypass the release-age rule when installing or updating packages.
 
 ```sh
 pnpm install
@@ -59,21 +63,23 @@ pnpm format:check
 pnpm benchmark
 ```
 
-Tests use Node's test runner, including an adapter that exercises the production handler in a real worker thread. Coverage includes chunk-boundary parsing, record limits, exact sorting, cancellable sorts/scans, scoped/narrowing queries, preview payload limits, on-demand copying, recovery sessions, stale replies, settings storage and shortcut rules. They do not launch a browser.
+Tests use Node's test runner, including an adapter that exercises the production handler in a real worker thread. Coverage includes chunk-boundary parsing, record limits, exact sorting, cancellable sorts/scans, scoped/narrowing queries, preview payload limits, on-demand copying, import-state recovery transitions, stale session replies, settings storage and shortcut rules. They do not launch a browser or mount the React UI; recovery coverage exercises the reducer and session protocol, rather than browser interactions.
 
 ### Structure
 
 - `src/parseInput.ts`: incremental UTF-8 decoding, record boundaries, dialect detection and parsing.
-- `src/data.ts`: worker-owned query engine, bounded previews and shared value operations.
+- `src/data.ts` / `src/numericIndex.ts`: worker-owned queries, exact numeric indexes, previews and copying.
+- `src/shared.ts`: dependency-free query types, limits and highlighting helpers; importing UI helpers does not bundle Papa Parse into the main thread.
 - `src/data.worker.ts` / `src/protocol.ts`: import validation, query scheduling, progress and detail requests.
 - `src/datasetSession.ts`: worker lifetime and stale-response protection.
-- `src/hooks/useDataset.ts`: import/recovery state, query dispatch and the current detail request.
+- `src/hooks/useDataset.ts` / `src/importState.ts`: import/recovery transitions, retained sources, query dispatch and the current detail request.
+- `src/ImportPreview.tsx`, `src/QueryControls.tsx`, `src/ColumnPicker.tsx`, `src/Pagination.tsx` and `src/ValueDialog.tsx`: focused interface components.
 - `src/ResultsTable.tsx`: memoised table and keyboard navigation.
 - `src/ui.tsx` / `src/ui.module.css`: compact reusable controls, popovers and dialogs.
 - `src/index.css`: semantic theme, spacing and font variables.
 
 ### Benchmark scope
 
-`pnpm benchmark` covers narrow, wide, random, duplicate, long-decimal, multiline and megabyte-cell inputs. It runs the production parser/validator and query handler in a real Node worker, includes message transfers, and reports import/search/narrowing/sort/page timings, serialised page size and cancellation acknowledgement latency. It also samples worker heap and typed-array memory and event-loop tick gaps.
+`pnpm benchmark` covers narrow, wide, random, duplicate, long-decimal, multiline and megabyte-cell inputs, plus 500,000-row numeric data, mixed columns and long fractional zero runs. Cancellation measurements include long numeric cells and datasets beyond the former numeric-cache threshold. It runs the production parser/validator and query handler in a real Node worker, includes message transfers, and reports import/search/narrowing/sort/page timings, serialised page size and cancellation acknowledgement latency. It also samples worker heap and typed-array memory and event-loop tick gaps.
 
 Sampled maxima are not certified peak memory. Tick gaps include import, garbage collection and timer scheduling. Node results do not certify browser rendering, clipboard behaviour, mobile performance or maximum file capacity. No browser smoke tests are run automatically.

@@ -58,7 +58,7 @@ test("real worker details preserve originals, format copies and keep errors reco
     const imported = receive(worker, "loaded");
     worker.postMessage({
       type: "load",
-      source: 'number,note\n" $1,234.00 ",hello',
+      source: 'number,note\n" $1,234.00 ",=1+1',
       delimiter: ",",
     });
     await imported;
@@ -74,6 +74,19 @@ test("real worker details preserve originals, format copies and keep errors reco
     const response = await detail;
     assert.equal(response.value, " $1,234.00 ");
     assert.equal(response.copyValue, "1234.00");
+    const safe = receive(worker, "detail", 4);
+    worker.postMessage({
+      type: "detail",
+      id: 4,
+      row: 1,
+      column: 1,
+      delimiter: ",",
+      simplify: false,
+      spreadsheet: true,
+    });
+    const safeResponse = await safe;
+    assert.equal(safeResponse.value, "=1+1");
+    assert.equal(safeResponse.copyValue, "'=1+1");
     const invalid = receive(worker, "detail", 2);
     worker.postMessage({
       type: "detail",

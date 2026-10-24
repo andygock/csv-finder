@@ -1,33 +1,31 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Delimiter, Page, Query } from "../data.ts";
-import { MAX_FILE_BYTES } from "../data.ts";
+import { useCallback, useEffect, useRef, useState, useReducer } from "react";
+import type { Delimiter, Page, Query } from "../shared.ts";
+import { importReducer, initialImportState, prepareSource } from "../importState.ts";
+import type { Source } from "../importState.ts";
 import { DatasetSession } from "../datasetSession.ts";
-import type { ImportInfo, WorkerRequest } from "../protocol.ts";
+import type { WorkerRequest } from "../protocol.ts";
 
-type Source = { value: File | string; delimiter: Delimiter; name: string; bytes: number };
 export type Detail = {
   id: number;
   row: number;
   column: number | null;
   value: string | null;
   copyValue?: string;
+  spreadsheet: boolean;
   error: string;
 };
 
 export default function useDataset(query: Query) {
-  const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [state, dispatch] = useReducer(importReducer, initialImportState);
+  const { info, source, error, warning, previousFile } = state;
+  const loaded = state.phase === "ready";
+  const loading = state.phase === "loading";
   const [searching, setSearching] = useState(false);
   const [progress, setProgress] = useState({ rows: 0, fraction: 0 });
   const [operation, setOperation] = useState({ phase: "Searching", fraction: 0 });
   const [page, setPage] = useState<Page | null>(null);
-  const [info, setInfo] = useState<ImportInfo | null>(null);
-  const [source, setSource] = useState<Source | null>(null);
-  const [error, setError] = useState("");
-  const [warning, setWarning] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const detailId = useRef(0);
-  const previousFile = useRef<Source | null>(null);
   const previousQuery = useRef<Query | null>(null);
   // The inert session only captures stable setters. Worker identity rejects
   // replies queued before Clear/replacement; detail IDs reject closed viewers.
@@ -37,18 +35,13 @@ export default function useDataset(query: Query) {
         () => new Worker(new URL("../data.worker.ts", import.meta.url), { type: "module" }),
         (message) => {
           if (message.type === "error") {
-            setError(message.message);
-            setLoading(false);
-            setLoaded(false);
+            dispatch({ type: "error", message: message.message });
             setSearching(false);
             setPage(null);
-            setInfo(null);
             setDetail(null);
           } else if (message.type === "progress") setProgress(message);
           else if (message.type === "loaded") {
-            setLoading(false);
-            setInfo(message.info);
-            setWarning(message.warning);
+            dispatch({ type: "loaded", info: message.info, warning: message.warning });
           } else if (message.type === "queryProgress") setOperation(message);
           else if (message.type === "detail") {
             setDetail((current) =>
@@ -71,61 +64,47 @@ export default function useDataset(query: Query) {
 
   const reset = useCallback(() => {
     session.stop();
-    setLoaded(false);
-    setLoading(false);
+    dispatch({ type: "cancel" });
     setSearching(false);
     setProgress({ rows: 0, fraction: 0 });
     setPage(null);
-    setInfo(null);
-    setError("");
-    setWarning("");
     setDetail(null);
     previousQuery.current = null;
   }, [session]);
   const clear = useCallback(() => {
     reset();
-    setSource(null);
-    previousFile.current = null;
+    dispatch({ type: "clear" });
   }, [reset]);
   useEffect(() => () => session.stop(), [session]);
 
-  const load = useCallback(
-    (value: File | string, delimiter: Delimiter): Promise<boolean> => {
-      // Validate before discarding the current view. Exact paste sizing also avoids
-      // replacing a good dataset with a multibyte paste beyond the file limit.
-      const bytes = typeof value === "string" ? new Blob([value]).size : value.size;
-      if (!bytes || bytes > MAX_FILE_BYTES) {
-        setError(
-          !bytes
-            ? "The input is empty."
-            : "This import exceeds the 256 MiB limit. Split it into smaller parts.",
-        );
-        return Promise.resolve(false);
-      }
+  const start = useCallback(
+    (next: Source) => {
       reset();
-      setSource({
-        value,
-        delimiter,
-        bytes,
-        name: typeof value === "string" ? "Pasted data" : value.name,
-      });
-      setLoading(true);
-      return session.load(value, delimiter);
+      dispatch({ type: "start", source: next });
+      return session.load(next.value, next.delimiter);
     },
     [reset, session],
   );
-  const confirm = useCallback(() => {
-    if (!info || !source) return;
-    // Keep only a File handle for recovery, not another parsed dataset or paste.
-    if (typeof source.value !== "string") previousFile.current = source;
-    setLoaded(true);
-  }, [info, source]);
+  const load = useCallback(
+    (value: File | string, delimiter: Delimiter): Promise<boolean> => {
+      try {
+        // Validate before discarding the current view. Exact paste sizing also avoids
+        // replacing a good dataset with a multibyte paste beyond the file limit.
+        return start(prepareSource(value, delimiter));
+      } catch (error) {
+        dispatch({
+          type: "validationError",
+          message: error instanceof Error ? error.message : "Could not prepare input.",
+        });
+        return Promise.resolve(false);
+      }
+    },
+    [start],
+  );
+  const confirm = useCallback(() => dispatch({ type: "confirm" }), []);
   const retry = (delimiter: Delimiter) =>
-    source ? load(source.value, delimiter) : Promise.resolve(false);
-  const recover = () =>
-    previousFile.current
-      ? load(previousFile.current.value, previousFile.current.delimiter)
-      : Promise.resolve(false);
+    source ? start({ ...source, delimiter }) : Promise.resolve(false);
+  const recover = () => (previousFile ? start(previousFile) : Promise.resolve(false));
   const cancelImport = useCallback(() => {
     reset();
   }, [reset]);
@@ -155,12 +134,18 @@ export default function useDataset(query: Query) {
   const cancelQuery = () => {
     session.invalidateQuery();
     setSearching(false);
-    if (!page) setLoaded(false);
+    if (!page) dispatch({ type: "preview" });
   };
   const inspect = useCallback(
-    (row: number, column: number | null, delimiter: "," | "\t", simplify: boolean) => {
+    (
+      row: number,
+      column: number | null,
+      delimiter: "," | "\t",
+      simplify: boolean,
+      spreadsheet = false,
+    ) => {
       const id = ++detailId.current;
-      setDetail({ id, row, column, value: null, error: "" });
+      setDetail({ id, row, column, value: null, error: "", spreadsheet });
       session.detail({
         type: "detail",
         id,
@@ -168,6 +153,7 @@ export default function useDataset(query: Query) {
         column,
         delimiter,
         simplify,
+        spreadsheet,
       } satisfies WorkerRequest);
     },
     [session],
@@ -189,7 +175,7 @@ export default function useDataset(query: Query) {
     retry,
     recover,
     importDelimiter: source?.delimiter ?? "",
-    canRecover: !!previousFile.current && !loaded && !loading,
+    canRecover: !!previousFile && !loaded && !loading,
     cancelImport,
     cancelQuery,
     detail,

@@ -1,4 +1,4 @@
-import type { Delimiter } from "./data";
+import type { Delimiter } from "./shared";
 import { Check, Dialog, Select } from "./ui";
 import styles from "./SettingsDialog.module.css";
 
